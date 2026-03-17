@@ -1,0 +1,5 @@
+{% for msg in messages %}
+    <div class="message">{{ msg|safe }}</div>
+{% else %}
+    <div class="message"><i>No hay mensajes aún. ¡Comienza a chatear!</i></div>
+{% endfor %}
