@@ -1,4 +1,4 @@
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template, request
 
 from socket_manager import messages, send_tcp_message, start_listener_thread
 
@@ -34,8 +34,7 @@ def send_message():
     if dest_ip and message_text:
         send_tcp_message(dest_ip, message_text)
 
-    # Redirigir de vuelta al inicio
-    return redirect(url_for("index"))
+    return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
