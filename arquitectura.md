@@ -50,3 +50,11 @@ Tarea7/
 + *Lenguaje:* Python 3.12+
 + *Framework:* Flask (Micro-framework).
 + *Librerías Core:* socket (Network IPC), threading (Concurrency).
+
+## 6. Requisitos de Comunicación de Red
++ El programa debe soportar múltiples modos de direccionamiento:
+  + **Unicast:** Envío de mensajes a un único destinatario.
+  + **Broadcast:** Difusión de mensajes a todos los nodos en la red local.
+  + **Multicast:** Envío de mensajes a un grupo específico de destinatarios interesados.
+  + **Anycast:** Envío de mensajes al nodo más cercano o accesible dentro de un grupo.
+

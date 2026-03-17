@@ -1,6 +1,11 @@
 from flask import Flask, jsonify, render_template, request
 
-from socket_manager import messages, send_tcp_message, start_listener_thread
+from socket_manager import (
+    join_multicast_group,
+    messages,
+    send_message,
+    start_listener_threads,
+)
 
 app = Flask(__name__)
 
@@ -10,7 +15,6 @@ def index():
     """
     Ruta principal para mostrar la interfaz web del chat.
     """
-    # Renderizamos la plantilla HTML usando el template engine
     return render_template("index.html", messages=messages)
 
 
@@ -24,25 +28,42 @@ def get_messages():
 
 
 @app.route("/enviar", methods=["POST"])
-def send_message():
+def handle_send_message():
     """
     Ruta que maneja el envío de mensajes desde el formulario web.
     """
+    mode = request.form.get("mode")
     dest_ip = request.form.get("ip")
     message_text = request.form.get("message")
 
-    if dest_ip and message_text:
-        send_tcp_message(dest_ip, message_text)
+    if mode and message_text:
+        # La IP de destino no es necesaria para broadcast
+        if mode == "broadcast":
+            dest_ip = ""
+        send_message(mode, dest_ip, message_text)
 
     return jsonify({"status": "ok"})
 
 
+@app.route("/join_group", methods=["POST"])
+def handle_join_group():
+    """
+    Ruta para unirse a un nuevo grupo multicast.
+    """
+    group_ip = request.form.get("ip")
+    if group_ip:
+        success, msg = join_multicast_group(group_ip)
+        if success:
+            return jsonify({"status": "ok", "message": msg})
+        else:
+            return jsonify({"status": "error", "message": msg}), 400
+    return jsonify({"status": "error", "message": "IP no proporcionada"}), 400
+
+
 if __name__ == "__main__":
-    # 1. Iniciar el hilo del listener TCP antes de Flask
-    start_listener_thread()
+    # 1. Iniciar los hilos de los listeners (TCP y UDP)
+    start_listener_threads()
 
     # 2. Iniciar el servidor web Flask
     print("[*] Iniciando servidor web Flask...")
-    # debug=False es recomendado cuando se usan hilos adicionales para evitar
-    # que se ejecuten doble vez (por el reloader de Werkzeug)
     app.run(host="0.0.0.0", port=5000, debug=False)
