@@ -118,7 +118,7 @@ def tcp_listener():
                         hostname = "Unknown"
                         msg_text = decoded_msg
 
-                    formatted_msg = f'<span class="other">[UNICAST from {hostname} ({addr[0]})]</span> {msg_text}'
+                    formatted_msg = f'<span class="other">[UNICAST from {hostname} (<a href="#" class="ip-link" data-ip="{addr[0]}">{addr[0]}</a>)]</span> {msg_text}'
                     chat_id = addr[0]
                     messages.append({"chat_id": chat_id, "html": formatted_msg})
                     print(f"[*] Recibido de {hostname} ({addr[0]}): {msg_text}")
@@ -187,7 +187,7 @@ def udp_listener():
                 ):
                     continue
 
-                formatted_msg = f'<span class="other">[UDP from {hostname} ({addr[0]})]</span> {msg_text}'
+                formatted_msg = f'<span class="other">[UDP from {hostname} (<a href="#" class="ip-link" data-ip="{addr[0]}">{addr[0]}</a>)]</span> {msg_text}'
                 chat_id = (
                     group_name
                     if group_name not in ["Multicast/Broadcast", "Unicast/Anycast"]
@@ -269,6 +269,11 @@ def send_message(mode, dest_ip, message_text):
         elif mode == "multicast":
             display_ip = dest_ip if dest_ip else MULTICAST_GROUP
             group_name = display_ip
+
+            # Auto unirse al grupo si no estamos en él
+            if display_ip not in joined_groups:
+                join_multicast_group(display_ip)
+
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             ttl = struct.pack("b", 1)
             client_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)

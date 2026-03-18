@@ -127,7 +127,7 @@ function renderChatsList() {
       if (Object.keys(members).length > 0) {
         nodeHtml += `<ul style="list-style: none; padding: 5px 10px 5px 30px; margin: 0; background: var(--input-bg); color: var(--text-color); font-size: 0.9em; border-top: 1px solid var(--border-color);">`;
         for (const [ip, hostname] of Object.entries(members)) {
-          nodeHtml += `<li style="padding: 3px 0; border-bottom: 1px solid var(--border-color);">${hostname} (${ip})</li>`;
+          nodeHtml += `<li class="member-link" data-ip="${ip}" style="padding: 3px 0; border-bottom: 1px solid var(--border-color); cursor: pointer;" onmouseover="this.style.textDecoration='underline'; this.style.color='#007bff';" onmouseout="this.style.textDecoration='none'; this.style.color='var(--text-color)';">${hostname} (${ip})</li>`;
         }
         nodeHtml += `</ul>`;
       } else {
@@ -171,6 +171,17 @@ function renderChatsList() {
       const id = item.getAttribute("data-id");
       if (id) {
         selectChat(id);
+      }
+    });
+  });
+
+  // Add event listeners to member links
+  chatsList.querySelectorAll(".member-link").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation(); // prevent details toggle if any
+      const ip = item.getAttribute("data-ip");
+      if (ip) {
+        selectChat(ip);
       }
     });
   });
@@ -327,10 +338,21 @@ document.addEventListener("DOMContentLoaded", () => {
   pollEstado(); // Llamada inicial
   pollMessages(); // Cargar mensajes inicialmente
 
-  // 2. Hacer scroll inicial
+  // 2. Hacer scroll inicial y manejo de clicks en chatBox
   const chatBox = document.getElementById("chat-box");
   if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
+
+    // Delegación de eventos para los enlaces de IP
+    chatBox.addEventListener("click", (e) => {
+      if (e.target && e.target.classList.contains("ip-link")) {
+        e.preventDefault();
+        const ip = e.target.getAttribute("data-ip");
+        if (ip) {
+          selectChat(ip);
+        }
+      }
+    });
   }
 
   // 3. Manejar el envío del formulario principal
