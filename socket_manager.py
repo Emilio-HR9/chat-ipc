@@ -3,15 +3,8 @@ import struct
 import threading
 
 
-def get_directed_broadcast_ip():
-    """
-    Obtiene la IP local real y calcula la dirección de broadcast dinámicamente
-    leyendo la máscara de subred real del sistema operativo.
-    """
-    import ipaddress
-    import os
-    import subprocess
-
+def get_local_ip():
+    """Obtiene la IP local de la interfaz de red principal."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # Nos conectamos a una IP de prueba para forzar al SO a elegir la interfaz principal
@@ -21,6 +14,19 @@ def get_directed_broadcast_ip():
         local_ip = "127.0.0.1"
     finally:
         s.close()
+    return local_ip
+
+
+def get_directed_broadcast_ip():
+    """
+    Obtiene la IP local real y calcula la dirección de broadcast dinámicamente
+    leyendo la máscara de subred real del sistema operativo.
+    """
+    import ipaddress
+    import os
+    import subprocess
+
+    local_ip = get_local_ip()
 
     if local_ip == "127.0.0.1":
         return "255.255.255.255"
@@ -116,7 +122,10 @@ def udp_listener():
         udp_socket.bind(("", PORT))
 
         # Unirse al grupo multicast por defecto
-        mreq = struct.pack("4sl", socket.inet_aton(MULTICAST_GROUP), socket.INADDR_ANY)
+        local_ip = get_local_ip()
+        mreq = struct.pack(
+            "4s4s", socket.inet_aton(MULTICAST_GROUP), socket.inet_aton(local_ip)
+        )
         udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
         print(
@@ -169,7 +178,10 @@ def join_multicast_group(group_ip):
         return False, "Ya estás en este grupo."
 
     try:
-        mreq = struct.pack("4sl", socket.inet_aton(group_ip), socket.INADDR_ANY)
+        local_ip = get_local_ip()
+        mreq = struct.pack(
+            "4s4s", socket.inet_aton(group_ip), socket.inet_aton(local_ip)
+        )
         udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         joined_groups.add(group_ip)
 
@@ -207,6 +219,13 @@ def send_message(mode, dest_ip, message_text):
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             ttl = struct.pack("b", 1)
             client_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+
+            # Establecer la interfaz de salida para multicast
+            local_ip = get_local_ip()
+            client_socket.setsockopt(
+                socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip)
+            )
+
             client_socket.sendto(message_text.encode("utf-8"), (display_ip, PORT))
             client_socket.close()
 
