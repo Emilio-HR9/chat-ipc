@@ -138,4 +138,26 @@ document.addEventListener("DOMContentLoaded", () => {
   if (joinGroupForm) {
     joinGroupForm.addEventListener("submit", handleJoinGroupSubmit);
   }
+
+  // 6. Configurar Modo Oscuro
+  const darkModeToggle = document.getElementById("dark-mode-toggle");
+  if (darkModeToggle) {
+    // Revisar preferencia previa
+    const isDarkMode = localStorage.getItem("darkMode") === "true";
+    if (isDarkMode) {
+      document.body.setAttribute("data-theme", "dark");
+      darkModeToggle.checked = true;
+    }
+
+    // Escuchar cambios
+    darkModeToggle.addEventListener("change", (e) => {
+      if (e.target.checked) {
+        document.body.setAttribute("data-theme", "dark");
+        localStorage.setItem("darkMode", "true");
+      } else {
+        document.body.removeAttribute("data-theme");
+        localStorage.setItem("darkMode", "false");
+      }
+    });
+  }
 });

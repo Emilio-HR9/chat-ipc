@@ -1,3 +1,4 @@
+import json
 import socket
 import struct
 import threading
@@ -102,9 +103,17 @@ def tcp_listener():
                 data = conn.recv(1024)
                 if data:
                     decoded_msg = data.decode("utf-8")
-                    formatted_msg = f'<span class="other">[UNICAST from {addr[0]}]</span> {decoded_msg}'
+                    try:
+                        parsed = json.loads(decoded_msg)
+                        hostname = parsed.get("hostname", "Unknown")
+                        msg_text = parsed.get("message", decoded_msg)
+                    except Exception:
+                        hostname = "Unknown"
+                        msg_text = decoded_msg
+
+                    formatted_msg = f'<span class="other">[UNICAST from {hostname} ({addr[0]})]</span> {msg_text}'
                     messages.append(formatted_msg)
-                    print(f"[*] Recibido de {addr[0]}: {decoded_msg}")
+                    print(f"[*] Recibido de {hostname} ({addr[0]}): {msg_text}")
         except Exception as e:
             print(f"[!] Hilo TCP: Error procesando conexión: {e}")
 
@@ -141,27 +150,32 @@ def udp_listener():
             data, addr = udp_socket.recvfrom(1024)
             if data:
                 decoded_msg = data.decode("utf-8")
+                try:
+                    parsed = json.loads(decoded_msg)
+                    hostname = parsed.get("hostname", "Unknown")
+                    msg_text = parsed.get("message", decoded_msg)
+                except Exception:
+                    hostname = "Unknown"
+                    msg_text = decoded_msg
 
                 # Para evitar mostrar nuestros propios mensajes en la interfaz si es un eco
                 # (Una solución robusta usaría un ID de mensaje)
                 if (
                     messages
                     and f"-> {MULTICAST_GROUP}" in messages[-1]
-                    and decoded_msg in messages[-1]
+                    and msg_text in messages[-1]
                 ):
                     continue
                 if (
                     messages
                     and "-> &lt;broadcast&gt;" in messages[-1]
-                    and decoded_msg in messages[-1]
+                    and msg_text in messages[-1]
                 ):
                     continue
 
-                formatted_msg = (
-                    f'<span class="other">[UDP from {addr[0]}]</span> {decoded_msg}'
-                )
+                formatted_msg = f'<span class="other">[UDP from {hostname} ({addr[0]})]</span> {msg_text}'
                 messages.append(formatted_msg)
-                print(f"[*] Recibido UDP de {addr[0]}: {decoded_msg}")
+                print(f"[*] Recibido UDP de {hostname} ({addr[0]}): {msg_text}")
         except Exception as e:
             print(f"[!] Hilo UDP: Error procesando datagrama: {e}")
 
@@ -197,12 +211,13 @@ def send_message(mode, dest_ip, message_text):
     Envía un mensaje según el modo seleccionado (unicast, broadcast, multicast, anycast).
     """
     display_ip = dest_ip
+    payload = json.dumps({"hostname": socket.gethostname(), "message": message_text})
     try:
         if mode in ["unicast", "anycast"]:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.settimeout(2.0)
             client_socket.connect((dest_ip, PORT))
-            client_socket.sendall(message_text.encode("utf-8"))
+            client_socket.sendall(payload.encode("utf-8"))
             client_socket.close()
 
         elif mode == "broadcast":
@@ -211,7 +226,7 @@ def send_message(mode, dest_ip, message_text):
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             # Enviar a la dirección de broadcast dirigida
-            client_socket.sendto(message_text.encode("utf-8"), (target_broadcast, PORT))
+            client_socket.sendto(payload.encode("utf-8"), (target_broadcast, PORT))
             client_socket.close()
 
         elif mode == "multicast":
@@ -226,7 +241,7 @@ def send_message(mode, dest_ip, message_text):
                 socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip)
             )
 
-            client_socket.sendto(message_text.encode("utf-8"), (display_ip, PORT))
+            client_socket.sendto(payload.encode("utf-8"), (display_ip, PORT))
             client_socket.close()
 
         # Agregar a nuestra propia lista para ver qué enviamos

@@ -13,69 +13,108 @@
         ></script>
     </head>
     <body>
-        <h1>Chat (Unicast, Broadcast, Multicast, Anycast)</h1>
-
-        <div id="chat-box">{% include 'mensajes.html' %}</div>
-
-        <form id="chat-form">
-            <div class="form-group">
-                <label for="mode">Modo:</label>
-                <select id="mode" name="mode">
-                    <option value="unicast" selected>Unicast</option>
-                    <option value="broadcast">Broadcast</option>
-                    <option value="multicast">Multicast</option>
-                    <option value="anycast">Anycast</option>
-                </select>
+        <div class="header">
+            <h1>{{ local_ip }} - {{ hostname }}</h1>
+            <div class="theme-switch">
+                <span>Modo Oscuro</span>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle" />
+                    <span class="slider"></span>
+                </label>
             </div>
-            <div class="form-group">
-                <label for="ip">IP Destino:</label>
-                <input
-                    type="text"
-                    id="ip"
-                    name="ip"
-                    required
-                    value="127.0.0.1"
-                    placeholder="Ej. 192.168.1.10"
-                />
-            </div>
-            <div class="form-group">
-                <label for="message">Mensaje:</label>
-                <input
-                    type="text"
-                    id="message"
-                    name="message"
-                    required
-                    autofocus
-                    autocomplete="off"
-                    placeholder="Escribe tu mensaje aquí..."
-                />
-            </div>
-            <button type="submit">Enviar Mensaje</button>
-        </form>
+        </div>
 
-        <div
-            style="
-                margin-top: 20px;
-                padding-top: 20px;
-                border-top: 1px solid #ccc;
-            "
-        >
-            <h3>Unirse a Grupo Multicast</h3>
-            <form
-                id="join-group-form"
-                style="display: flex; gap: 10px; align-items: center"
-            >
-                <label for="group-ip">IP del Grupo:</label>
-                <input
-                    type="text"
-                    id="group-ip"
-                    name="ip"
-                    required
-                    placeholder="Ej. 224.1.1.2"
-                    style="flex: 1; padding: 5px"
-                />
-                <button type="submit" style="padding: 5px 15px">Unirse</button>
-            </form>
+        <div class="main-container">
+            <div class="top-panels">
+                <div class="left-panel">
+                    <h2>Mensajes</h2>
+                    <div id="chat-box">{% include 'mensajes.html' %}</div>
+                </div>
+
+                <div class="right-panel">
+                    <h2>Grupos</h2>
+                    <div class="groups-container">
+                        <div
+                            class="static-groups"
+                            style="
+                                margin-bottom: 20px;
+                                padding: 10px;
+                                border: 1px dashed var(--border-color);
+                                border-radius: 5px;
+                            "
+                        >
+                            <i>Aquí van los grupos...</i>
+                        </div>
+
+                        <div class="join-group-section">
+                            <h3>Unirse a Grupo Multicast</h3>
+                            <form
+                                id="join-group-form"
+                                style="
+                                    display: flex;
+                                    flex-direction: column;
+                                    gap: 10px;
+                                "
+                            >
+                                <label for="group-ip">IP del Grupo:</label>
+                                <div style="display: flex; gap: 10px">
+                                    <input
+                                        type="text"
+                                        id="group-ip"
+                                        name="ip"
+                                        required
+                                        placeholder="Ej. 224.1.1.2"
+                                        style="flex: 1"
+                                    />
+                                    <button type="submit">Unirse</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-panel">
+                <form id="chat-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="mode">Modo:</label>
+                            <select id="mode" name="mode">
+                                <option value="unicast" selected>
+                                    Unicast
+                                </option>
+                                <option value="broadcast">Broadcast</option>
+                                <option value="multicast">Multicast</option>
+                                <option value="anycast">Anycast</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="ip">IP Destino:</label>
+                            <input
+                                type="text"
+                                id="ip"
+                                name="ip"
+                                required
+                                value="127.0.0.1"
+                                placeholder="Ej. 192.168.1.10"
+                            />
+                        </div>
+                    </div>
+                    <div class="form-group message-group">
+                        <label for="message">Mensaje:</label>
+                        <input
+                            type="text"
+                            id="message"
+                            name="message"
+                            required
+                            autofocus
+                            autocomplete="off"
+                            placeholder="Escribe tu mensaje aquí..."
+                        />
+                        <button type="submit">Enviar Mensaje</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </body>
 </html>

@@ -1,6 +1,9 @@
+import socket
+
 from flask import Flask, jsonify, render_template, request
 
 from socket_manager import (
+    get_local_ip,
     join_multicast_group,
     messages,
     send_message,
@@ -15,7 +18,11 @@ def index():
     """
     Ruta principal para mostrar la interfaz web del chat.
     """
-    return render_template("index.html", messages=messages)
+    local_ip = get_local_ip()
+    hostname = socket.gethostname()
+    return render_template(
+        "index.html", messages=messages, local_ip=local_ip, hostname=hostname
+    )
 
 
 @app.route("/mensajes")
