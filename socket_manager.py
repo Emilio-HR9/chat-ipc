@@ -79,6 +79,7 @@ MULTICAST_GROUP = "224.1.1.1"
 # Variables globales para el socket UDP y los grupos a los que estamos unidos
 udp_socket = None
 joined_groups = set([MULTICAST_GROUP])
+known_members = {}
 
 
 def tcp_listener():
@@ -107,6 +108,11 @@ def tcp_listener():
                         parsed = json.loads(decoded_msg)
                         hostname = parsed.get("hostname", "Unknown")
                         msg_text = parsed.get("message", decoded_msg)
+                        group_name = parsed.get("group", "Unicast/Anycast")
+                        if hostname != "Unknown":
+                            if group_name not in known_members:
+                                known_members[group_name] = {}
+                            known_members[group_name][addr[0]] = hostname
                     except Exception:
                         hostname = "Unknown"
                         msg_text = decoded_msg
@@ -154,6 +160,11 @@ def udp_listener():
                     parsed = json.loads(decoded_msg)
                     hostname = parsed.get("hostname", "Unknown")
                     msg_text = parsed.get("message", decoded_msg)
+                    group_name = parsed.get("group", "Multicast/Broadcast")
+                    if hostname != "Unknown":
+                        if group_name not in known_members:
+                            known_members[group_name] = {}
+                        known_members[group_name][addr[0]] = hostname
                 except Exception:
                     hostname = "Unknown"
                     msg_text = decoded_msg
@@ -211,26 +222,42 @@ def send_message(mode, dest_ip, message_text):
     Envía un mensaje según el modo seleccionado (unicast, broadcast, multicast, anycast).
     """
     display_ip = dest_ip
-    payload = json.dumps({"hostname": socket.gethostname(), "message": message_text})
     try:
         if mode in ["unicast", "anycast"]:
+            group_name = "Unicast/Anycast"
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.settimeout(2.0)
             client_socket.connect((dest_ip, PORT))
+            payload = json.dumps(
+                {
+                    "hostname": socket.gethostname(),
+                    "message": message_text,
+                    "group": group_name,
+                }
+            )
             client_socket.sendall(payload.encode("utf-8"))
             client_socket.close()
 
         elif mode == "broadcast":
             target_broadcast = get_directed_broadcast_ip()
             display_ip = f"&lt;broadcast: {target_broadcast}&gt;"
+            group_name = "Broadcast"
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            payload = json.dumps(
+                {
+                    "hostname": socket.gethostname(),
+                    "message": message_text,
+                    "group": group_name,
+                }
+            )
             # Enviar a la dirección de broadcast dirigida
             client_socket.sendto(payload.encode("utf-8"), (target_broadcast, PORT))
             client_socket.close()
 
         elif mode == "multicast":
             display_ip = dest_ip if dest_ip else MULTICAST_GROUP
+            group_name = display_ip
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             ttl = struct.pack("b", 1)
             client_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
@@ -241,6 +268,13 @@ def send_message(mode, dest_ip, message_text):
                 socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip)
             )
 
+            payload = json.dumps(
+                {
+                    "hostname": socket.gethostname(),
+                    "message": message_text,
+                    "group": group_name,
+                }
+            )
             client_socket.sendto(payload.encode("utf-8"), (display_ip, PORT))
             client_socket.close()
 

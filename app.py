@@ -5,6 +5,8 @@ from flask import Flask, jsonify, render_template, request
 from socket_manager import (
     get_local_ip,
     join_multicast_group,
+    joined_groups,
+    known_members,
     messages,
     send_message,
     start_listener_threads,
@@ -32,6 +34,14 @@ def get_messages():
     Retorna solo el HTML de los mensajes.
     """
     return render_template("mensajes.html", messages=messages)
+
+
+@app.route("/estado")
+def get_estado():
+    """
+    Ruta para el polling desde el frontend de grupos y miembros conocidos.
+    """
+    return jsonify({"grupos": list(joined_groups), "miembros": known_members})
 
 
 @app.route("/enviar", methods=["POST"])

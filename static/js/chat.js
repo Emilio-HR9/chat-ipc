@@ -106,12 +106,86 @@ function handleJoinGroupSubmit(e) {
     });
 }
 
+/**
+ * Realiza una solicitud al servidor para obtener grupos y miembros conocidos.
+ */
+function pollEstado() {
+  fetch("/estado")
+    .then((response) => response.json())
+    .then((data) => {
+      // Actualizar grupos
+      const gruposLista = document.getElementById("grupos-lista");
+      if (gruposLista) {
+        gruposLista.innerHTML = "";
+        data.grupos.forEach((grupo) => {
+          const li = document.createElement("li");
+          li.textContent = grupo;
+          li.style.marginBottom = "5px";
+          gruposLista.appendChild(li);
+        });
+        if (data.grupos.length === 0) {
+          gruposLista.innerHTML = "<li><i>No hay grupos</i></li>";
+        }
+      }
+
+      // Actualizar miembros
+      const miembrosContainer = document.getElementById("miembros-container");
+      if (miembrosContainer) {
+        // save open details to preserve state across repaints
+        const openGroups = new Set();
+        miembrosContainer.querySelectorAll("details[open]").forEach((d) => {
+          const summary = d.querySelector("summary");
+          if (summary) openGroups.add(summary.textContent);
+        });
+
+        let html = "";
+        let hasMembers = false;
+        for (const [group, members] of Object.entries(data.miembros)) {
+          if (Object.keys(members).length === 0) continue;
+          hasMembers = true;
+          const isOpen = openGroups.has(group) ? "open" : "";
+          html += `<details ${isOpen} style="margin-bottom: 5px; cursor: pointer; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;">`;
+          html += `<summary style="font-weight: bold; padding: 2px;">${group}</summary>`;
+          html += `<ul style="list-style-type: none; padding-left: 10px; margin: 5px 0 0 0; border-top: 1px solid var(--border-color); padding-top: 5px;">`;
+          for (const [ip, hostname] of Object.entries(members)) {
+            html += `<li class="member-item" data-ip="${ip}" style="padding: 3px 0; color: var(--text-color); cursor: pointer;" onmouseover="this.style.textDecoration='underline'; this.style.color='#007bff';" onmouseout="this.style.textDecoration='none'; this.style.color='var(--text-color)';">${hostname} (${ip})</li>`;
+          }
+          html += `</ul></details>`;
+        }
+
+        if (!hasMembers) {
+          html = "<i>No hay miembros conocidos</i>";
+        }
+        miembrosContainer.innerHTML = html;
+
+        // Add event listeners to newly created items
+        miembrosContainer.querySelectorAll(".member-item").forEach((item) => {
+          item.addEventListener("click", (e) => {
+            const selectedIp = e.target.getAttribute("data-ip");
+            if (selectedIp) {
+              const ipInput = document.getElementById("ip");
+              const modeSelect = document.getElementById("mode");
+              if (ipInput && modeSelect) {
+                modeSelect.value = "unicast";
+                ipInput.value = selectedIp;
+                ipInput.disabled = false;
+              }
+            }
+          });
+        });
+      }
+    })
+    .catch((err) => console.error("Error en polling de estado:", err));
+}
+
 // --- Event Listeners ---
 
 // Se ejecuta cuando el DOM está completamente cargado
 document.addEventListener("DOMContentLoaded", () => {
-  // 1. Iniciar el polling de mensajes
+  // 1. Iniciar el polling de mensajes y estado
   setInterval(pollMessages, POLLING_INTERVAL);
+  setInterval(pollEstado, POLLING_INTERVAL);
+  pollEstado(); // Llamada inicial
 
   // 2. Hacer scroll inicial
   const chatBox = document.getElementById("chat-box");

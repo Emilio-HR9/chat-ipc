@@ -32,18 +32,43 @@
                 </div>
 
                 <div class="right-panel">
-                    <h2>Grupos</h2>
+                    <h2>Información de Red</h2>
                     <div class="groups-container">
-                        <div
-                            class="static-groups"
-                            style="
-                                margin-bottom: 20px;
-                                padding: 10px;
-                                border: 1px dashed var(--border-color);
-                                border-radius: 5px;
-                            "
-                        >
-                            <i>Aquí van los grupos...</i>
+                        <div style="margin-bottom: 20px">
+                            <h3>Grupos Multicast</h3>
+                            <div
+                                class="static-groups"
+                                style="
+                                    padding: 10px;
+                                    border: 1px dashed var(--border-color);
+                                    border-radius: 5px;
+                                "
+                            >
+                                <ul
+                                    id="grupos-lista"
+                                    style="
+                                        list-style-type: none;
+                                        padding-left: 0;
+                                        margin: 0;
+                                    "
+                                >
+                                    <li><i>Cargando grupos...</i></li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 20px">
+                            <h3>Miembros Conocidos</h3>
+                            <div
+                                id="miembros-container"
+                                style="
+                                    padding: 10px;
+                                    border: 1px dashed var(--border-color);
+                                    border-radius: 5px;
+                                "
+                            >
+                                <i>Cargando miembros...</i>
+                            </div>
                         </div>
 
                         <div class="join-group-section">
