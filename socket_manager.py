@@ -2,6 +2,29 @@ import socket
 import struct
 import threading
 
+
+def get_directed_broadcast_ip():
+    """
+    Obtiene la IP local real (ignorando adaptadores de VirtualBox/WSL)
+    y calcula la dirección de broadcast asumiendo una máscara /24 (255.255.255.0).
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Nos conectamos a una IP de prueba (no importa si no existe)
+        # para forzar al SO a elegir la interfaz de red principal.
+        s.connect(("10.255.255.255", 1))
+        local_ip = s.getsockname()[0]
+    except Exception:
+        local_ip = "127.0.0.1"
+    finally:
+        s.close()
+
+    # Cambiamos el último octeto por 255
+    ip_parts = local_ip.split(".")
+    ip_parts[3] = "255"
+    return ".".join(ip_parts)
+
+
 # Lista global para almacenar los mensajes de chat
 messages = []
 
@@ -135,13 +158,12 @@ def send_message(mode, dest_ip, message_text):
             client_socket.close()
 
         elif mode == "broadcast":
-            display_ip = "&lt;broadcast&gt;"
+            target_broadcast = get_directed_broadcast_ip()
+            display_ip = f"&lt;broadcast: {target_broadcast}&gt;"
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            # Enviar a la dirección de broadcast global
-            client_socket.sendto(
-                message_text.encode("utf-8"), ("255.255.255.255", PORT)
-            )
+            # Enviar a la dirección de broadcast dirigida
+            client_socket.sendto(message_text.encode("utf-8"), (target_broadcast, PORT))
             client_socket.close()
 
         elif mode == "multicast":
