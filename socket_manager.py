@@ -5,13 +5,16 @@ import threading
 
 def get_directed_broadcast_ip():
     """
-    Obtiene la IP local real (ignorando adaptadores de VirtualBox/WSL)
-    y calcula la dirección de broadcast asumiendo una máscara /24 (255.255.255.0).
+    Obtiene la IP local real y calcula la dirección de broadcast dinámicamente
+    leyendo la máscara de subred real del sistema operativo.
     """
+    import ipaddress
+    import os
+    import subprocess
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Nos conectamos a una IP de prueba (no importa si no existe)
-        # para forzar al SO a elegir la interfaz de red principal.
+        # Nos conectamos a una IP de prueba para forzar al SO a elegir la interfaz principal
         s.connect(("10.255.255.255", 1))
         local_ip = s.getsockname()[0]
     except Exception:
@@ -19,10 +22,43 @@ def get_directed_broadcast_ip():
     finally:
         s.close()
 
-    # Cambiamos el último octeto por 255
-    ip_parts = local_ip.split(".")
-    ip_parts[3] = "255"
-    return ".".join(ip_parts)
+    if local_ip == "127.0.0.1":
+        return "255.255.255.255"
+
+    prefix_length = 24  # Valor por defecto /24
+
+    try:
+        if os.name == "nt":
+            # Windows: Usar PowerShell para obtener la máscara de la IP
+            cmd = f"powershell -NoProfile -Command \"(Get-NetIPAddress -IPAddress '{local_ip}' -ErrorAction SilentlyContinue).PrefixLength\""
+            output = subprocess.check_output(cmd, shell=True, text=True).strip()
+            if output:
+                prefix = output.splitlines()[0].strip()
+                if prefix.isdigit():
+                    prefix_length = int(prefix)
+        else:
+            # Linux/macOS: Intentar extraer de 'ip addr'
+            cmd = f"ip -o -f inet addr show | grep '{local_ip}'"
+            output = subprocess.check_output(cmd, shell=True, text=True).strip()
+            if "/" in output:
+                part = output.split(f"{local_ip}/")[1]
+                prefix = part.split()[0]
+                if prefix.isdigit():
+                    prefix_length = int(prefix)
+    except Exception as e:
+        print(
+            f"[*] No se pudo leer la máscara exacta del SO, usando /{prefix_length}. Error: {e}"
+        )
+
+    try:
+        # Calcula matemáticamente la dirección de broadcast real
+        network = ipaddress.IPv4Network(f"{local_ip}/{prefix_length}", strict=False)
+        return str(network.broadcast_address)
+    except Exception:
+        # Fallback de emergencia
+        ip_parts = local_ip.split(".")
+        ip_parts[3] = "255"
+        return ".".join(ip_parts)
 
 
 # Lista global para almacenar los mensajes de chat
