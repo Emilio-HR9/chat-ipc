@@ -2,7 +2,7 @@
 <html lang="es">
     <head>
         <meta charset="UTF-8" />
-        <title>Chat</title>
+        <title>Chat IPC</title>
         <link
             rel="stylesheet"
             href="{{ url_for('static', filename='css/style.css') }}"
@@ -32,46 +32,39 @@
                 </div>
 
                 <div class="right-panel">
-                    <h2>Información de Red</h2>
-                    <div class="groups-container">
-                        <div style="margin-bottom: 20px">
-                            <h3>Grupos Multicast</h3>
+                    <h2>Chats</h2>
+                    <div
+                        class="groups-container"
+                        style="
+                            display: flex;
+                            flex-direction: column;
+                            height: 100%;
+                        "
+                    >
+                        <div
+                            style="
+                                margin-bottom: 20px;
+                                flex: 1;
+                                overflow-y: auto;
+                            "
+                        >
                             <div
-                                class="static-groups"
+                                id="chats-list"
                                 style="
                                     padding: 10px;
                                     border: 1px dashed var(--border-color);
                                     border-radius: 5px;
+                                    min-height: 150px;
                                 "
                             >
-                                <ul
-                                    id="grupos-lista"
-                                    style="
-                                        list-style-type: none;
-                                        padding-left: 0;
-                                        margin: 0;
-                                    "
-                                >
-                                    <li><i>Cargando grupos...</i></li>
-                                </ul>
+                                <i>Cargando chats...</i>
                             </div>
                         </div>
 
-                        <div style="margin-bottom: 20px">
-                            <h3>Miembros Conocidos</h3>
-                            <div
-                                id="miembros-container"
-                                style="
-                                    padding: 10px;
-                                    border: 1px dashed var(--border-color);
-                                    border-radius: 5px;
-                                "
-                            >
-                                <i>Cargando miembros...</i>
-                            </div>
-                        </div>
-
-                        <div class="join-group-section">
+                        <div
+                            class="join-group-section"
+                            style="margin-top: auto"
+                        >
                             <h3>Unirse a Grupo Multicast</h3>
                             <form
                                 id="join-group-form"

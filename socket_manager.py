@@ -118,7 +118,8 @@ def tcp_listener():
                         msg_text = decoded_msg
 
                     formatted_msg = f'<span class="other">[UNICAST from {hostname} ({addr[0]})]</span> {msg_text}'
-                    messages.append(formatted_msg)
+                    chat_id = addr[0]
+                    messages.append({"chat_id": chat_id, "html": formatted_msg})
                     print(f"[*] Recibido de {hostname} ({addr[0]}): {msg_text}")
         except Exception as e:
             print(f"[!] Hilo TCP: Error procesando conexión: {e}")
@@ -185,7 +186,14 @@ def udp_listener():
                     continue
 
                 formatted_msg = f'<span class="other">[UDP from {hostname} ({addr[0]})]</span> {msg_text}'
-                messages.append(formatted_msg)
+                chat_id = (
+                    group_name
+                    if group_name not in ["Multicast/Broadcast", "Unicast/Anycast"]
+                    else (
+                        "Broadcast" if group_name == "Multicast/Broadcast" else addr[0]
+                    )
+                )
+                messages.append({"chat_id": chat_id, "html": formatted_msg})
                 print(f"[*] Recibido UDP de {hostname} ({addr[0]}): {msg_text}")
         except Exception as e:
             print(f"[!] Hilo UDP: Error procesando datagrama: {e}")
@@ -211,7 +219,7 @@ def join_multicast_group(group_ip):
         joined_groups.add(group_ip)
 
         formatted_msg = f'<span class="system" style="color: #007bff; font-weight: bold;">[Sistema] Te has unido al grupo multicast {group_ip}</span>'
-        messages.append(formatted_msg)
+        messages.append({"chat_id": group_ip, "html": formatted_msg})
         return True, "Unido exitosamente"
     except Exception as e:
         return False, f"Error uniéndose al grupo: {e}"
@@ -280,14 +288,21 @@ def send_message(mode, dest_ip, message_text):
 
         # Agregar a nuestra propia lista para ver qué enviamos
         formatted_msg = f'<span class="self">[Tú {mode.upper()} -> {display_ip}]</span> {message_text}'
-        messages.append(formatted_msg)
+        chat_id = (
+            group_name
+            if group_name not in ["Unicast/Anycast", "Broadcast"]
+            else (dest_ip if mode != "broadcast" else "Broadcast")
+        )
+        messages.append({"chat_id": chat_id, "html": formatted_msg})
 
     except socket.timeout:
         error_msg = f'<span class="error">[Error timeout conectando a {dest_ip}]</span> El destino no responde.'
-        messages.append(error_msg)
+        chat_id = dest_ip if dest_ip else "Broadcast"
+        messages.append({"chat_id": chat_id, "html": error_msg})
     except Exception as e:
         error_msg = f'<span class="error">[Error enviando a {dest_ip}]</span> {e}'
-        messages.append(error_msg)
+        chat_id = dest_ip if dest_ip else "Broadcast"
+        messages.append({"chat_id": chat_id, "html": error_msg})
 
 
 def start_listener_threads():

@@ -1,5 +1,5 @@
 {% for msg in messages %}
-    <div class="message">{{ msg|safe }}</div>
+<div class="message" data-chat="{{ msg.chat_id }}">{{ msg.html|safe }}</div>
 {% else %}
-    <div class="message"><i>No hay mensajes aún. ¡Comienza a chatear!</i></div>
+<div class="message"><i>No hay mensajes aún. ¡Comienza a chatear!</i></div>
 {% endfor %}
