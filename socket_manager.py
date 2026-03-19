@@ -105,11 +105,13 @@ def tcp_listener():
                 if data:
                     decoded_msg = data.decode("utf-8")
                     group_name = "Unicast/Anycast"
+                    msg_type = "message"
                     try:
                         parsed = json.loads(decoded_msg)
                         hostname = parsed.get("hostname", "Unknown")
                         msg_text = parsed.get("message", decoded_msg)
                         group_name = parsed.get("group", group_name)
+                        msg_type = parsed.get("type", "message")
                         if hostname != "Unknown":
                             if group_name not in known_members:
                                 known_members[group_name] = {}
@@ -117,6 +119,9 @@ def tcp_listener():
                     except Exception:
                         hostname = "Unknown"
                         msg_text = decoded_msg
+
+                    if msg_type == "discovery":
+                        continue
 
                     formatted_msg = f'<span class="other">[UNICAST from {hostname} (<a href="#" class="ip-link" data-ip="{addr[0]}">{addr[0]}</a>)]</span> {msg_text}'
                     chat_id = addr[0]
@@ -159,11 +164,13 @@ def udp_listener():
             if data:
                 decoded_msg = data.decode("utf-8")
                 group_name = "Multicast/Broadcast"
+                msg_type = "message"
                 try:
                     parsed = json.loads(decoded_msg)
                     hostname = parsed.get("hostname", "Unknown")
                     msg_text = parsed.get("message", decoded_msg)
                     group_name = parsed.get("group", group_name)
+                    msg_type = parsed.get("type", "message")
                     if hostname != "Unknown":
                         if group_name not in known_members:
                             known_members[group_name] = {}
@@ -171,6 +178,9 @@ def udp_listener():
                 except Exception:
                     hostname = "Unknown"
                     msg_text = decoded_msg
+
+                if msg_type == "discovery":
+                    continue
 
                 # Para evitar mostrar nuestros propios mensajes en la interfaz si es un eco
                 # (Una solución robusta usaría un ID de mensaje)
@@ -313,11 +323,64 @@ def send_message(mode, dest_ip, message_text):
         messages.append({"chat_id": chat_id, "html": error_msg})
 
 
+def discovery_broadcaster():
+    """
+    Hilo en segundo plano que anuncia la presencia cíclicamente a la red.
+    """
+    import time
+    while True:
+        try:
+            my_hostname = socket.gethostname()
+            
+            # 1. Anunciarse por UDP Broadcast (para Unicast/Anycast)
+            try:
+                target_broadcast = get_directed_broadcast_ip()
+                b_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                b_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                
+                payload_bcast = json.dumps({
+                    "type": "discovery",
+                    "hostname": my_hostname,
+                    "group": "Unicast/Anycast"
+                })
+                b_socket.sendto(payload_bcast.encode("utf-8"), (target_broadcast, PORT))
+                b_socket.close()
+            except Exception as e:
+                pass
+                
+            # 2. Anunciarse en los grupos multicast activos
+            local_ip = get_local_ip()
+            for group_ip in list(joined_groups):
+                try:
+                    m_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    ttl = struct.pack("b", 1)
+                    m_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+                    m_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip))
+                    
+                    payload_mcast = json.dumps({
+                        "type": "discovery",
+                        "hostname": my_hostname,
+                        "group": group_ip
+                    })
+                    m_socket.sendto(payload_mcast.encode("utf-8"), (group_ip, PORT))
+                    m_socket.close()
+                except Exception as e:
+                    pass
+                    
+        except Exception as e:
+            pass
+            
+        time.sleep(5)
+
+
 def start_listener_threads():
     """
-    Inicia los hilos de los listeners TCP y UDP.
+    Inicia los hilos de los listeners TCP, UDP y descubrimiento.
     """
     tcp_thread = threading.Thread(target=tcp_listener, daemon=True)
     udp_thread = threading.Thread(target=udp_listener, daemon=True)
+    discovery_thread = threading.Thread(target=discovery_broadcaster, daemon=True)
+    
     tcp_thread.start()
     udp_thread.start()
+    discovery_thread.start()
