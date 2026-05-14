@@ -11,6 +11,7 @@ Esta aplicación es un sistema de chat que permite a los usuarios comunicarse a 
 La principal característica es que abstrae la complejidad de los sockets directos, permitiendo usar protocolos como UDP Multicast y TCP Anycast de forma transparente a través de un nodo central (el servidor).
 
 > **Nota de Estudio:** El código fuente principal de este proyecto (`app.py`, `servidor.py`, `socket_manager.py`) está extensamente documentado y comentado línea por línea. Esto fue diseñado específicamente para facilitar el estudio y la comprensión técnica de la arquitectura de sockets y redes.
+
 > Si buscas analizar y entender la estructura/arquitectura del código, te recomendamos leer `arquitectura.md`
 
 ## 2. Requisitos Previos
