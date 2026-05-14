@@ -1,5 +1,15 @@
 # Guía de Usuario: Chat Multi-Modo con Interfaz Web
 
+## 0. Índice
+1. [Descripción General](#1-descripción-general)
+2. [Requisitos Previos](#2-requisitos-previos)
+3. [Instalación](#3-instalación)
+4. [Configuración de Red](#4-configuración-de-red)
+5. [Cómo Ejecutar la Aplicación](#5-cómo-ejecutar-la-aplicación)
+6. [Cómo Usar el Chat](#6-cómo-usar-el-chat)
+    - [La Interfaz](#la-interfaz)
+    - [Funciones Principales](#funciones-principales)
+
 ## 1. Descripción General
 
 Esta aplicación es un sistema de chat que permite a los usuarios comunicarse a través de una red local utilizando múltiples esquemas de enrutamiento (Unicast, Broadcast, Multicast y Anycast). Utiliza una arquitectura "Socket-Web Bridge" bajo un modelo Cliente-Servidor:
@@ -19,7 +29,7 @@ La principal característica es que abstrae la complejidad de los sockets direct
 Antes de comenzar, asegúrate de tener instalado lo siguiente en tu sistema:
 
 *   **Python:** Versión 3.8 o superior.
-  * https://www.python.org/downloads/
+  * <https://www.python.org/downloads/>
 *   **Pip:** El gestor de paquetes de Python (generalmente viene incluido con Python).
   * `python -m pip install pip` en terminal.
 * **Flask (opcional):** Un microframework web para Python.
@@ -103,9 +113,9 @@ Verás una salida similar a esta:
 
 Para probar el chat, asegúrate de que `servidor.py` esté corriendo y luego inicia tantas instancias de `app.py` como desees (si las inicias en la misma máquina, cada `app.py` tomará un puerto web diferente automáticamente, ej. 5000, 5001, 5002...).
 
-1.  **Abre un navegador web** y accede al puerto que te indicó la consola, por ejemplo:
+1.  **Abre un navegador web** y accede al puerto que te indicó la consola, por ejemplo (solo con fines representativos, los números pueden variar):
     ```
-    http://localhost:5000
+    http://192.168.30.5:5000
     ```
 
 ### La Interfaz

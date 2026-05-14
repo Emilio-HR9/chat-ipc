@@ -1,5 +1,14 @@
 # Arquitectura del Sistema: Socket-Web Bridge Multi-Protocolo
 
+## Índice
+1. [Estructura del Proyecto (Modular)](#1-estructura-del-proyecto-modular)
+2. [Capa de Presentación (Frontend Web)](#2-capa-de-presentación-frontend-web)
+3. [Capa de Aplicación (Backend del Cliente - Flask)](#3-capa-de-aplicación-backend-del-cliente---flask)
+4. [Capa de Concurrencia (Gestión de Hilos del Cliente)](#4-capa-de-concurrencia-gestión-de-hilos-del-cliente)
+5. [Capa de Comunicación (Servidor Central - servidor.py)](#5-capa-de-comunicación-servidor-central---servidorpy)
+6. [Resumen del Stack Técnico](#resumen-del-stack-técnico)
+7. [Documentación de Código (Estudio)](#6-documentación-de-código-estudio)
+
 ## 1. Estructura del Proyecto (Modular)
 El proyecto ha sido diseñado para separar responsabilidades en distintos archivos y directorios utilizando un modelo Cliente-Servidor:
 ```text
