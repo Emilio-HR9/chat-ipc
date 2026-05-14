@@ -66,5 +66,5 @@ A diferencia de un modelo P2P puro, este sistema utiliza un servidor central (`s
 + *Cliente:* Vanilla JS (`fetch` API), CSS3 (Flexbox).
 
 ---
-## 6. Documentación de Código (Estudio)
+## 6. Documentación de Código
 Los archivos core del proyecto (`app.py`, `servidor.py`, y `socket_manager.py`) han sido comentados línea por línea de manera exhaustiva. El propósito principal de estas anotaciones es servir como material de estudio didáctico para comprender a fondo la implementación técnica, la lógica de red (TCP/UDP), la concurrencia con hilos, y los mecanismos de enrutamiento de mensajes.

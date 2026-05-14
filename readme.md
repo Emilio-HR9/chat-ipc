@@ -1,6 +1,6 @@
 # 💬 Guía de Instalación Rápida del Chat
 
-¡Hola! Esta es una guía paso a paso para que cualquier persona, sin importar si sabe de programación o no, pueda instalar y usar esta aplicación de chat en su computadora.
+¡Hola! Esta es una guía paso a paso para instalar y usar esta aplicación de chat en su computadora.
 
 ---
 
