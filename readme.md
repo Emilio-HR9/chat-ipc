@@ -2,13 +2,15 @@
 
 ## 1. Descripción General
 
-Esta aplicación es un sistema de chat local que permite a los usuarios comunicarse a través de una red local utilizando múltiples esquemas de enrutamiento (Unicast, Broadcast, Multicast y Anycast). Utiliza una arquitectura "Socket-Web Bridge":
+Esta aplicación es un sistema de chat que permite a los usuarios comunicarse a través de una red local utilizando múltiples esquemas de enrutamiento (Unicast, Broadcast, Multicast y Anycast). Utiliza una arquitectura "Socket-Web Bridge" bajo un modelo Cliente-Servidor:
 
-*   **Backend:** Un servidor web local escrito en Python con el micro-framework Flask.
+*   **Servidor Central (`servidor.py`):** Actúa como router central enrutando mensajes por TCP y UDP hacia los clientes destino correspondientes, gestionando las desconexiones y grupos.
+*   **Cliente Web (`app.py`):** Un servidor local escrito en Python con el micro-framework Flask que hace de puente entre los sockets y tu navegador.
 *   **Frontend:** Una interfaz web moderna con soporte para múltiples salas de chat, notificaciones y modo oscuro.
-*   **Comunicación:** Se basa en sockets en bruto (TCP para Unicast/Anycast y UDP para Broadcast/Multicast) para el intercambio de mensajes entre las máquinas.
 
-La principal característica es que no depende de un servidor central para retransmitir mensajes; todas las conexiones son directas entre pares (P2P) o a través de grupos de red.
+La principal característica es que abstrae la complejidad de los sockets directos, permitiendo usar protocolos como UDP Multicast y TCP Anycast de forma transparente a través de un nodo central (el servidor).
+
+> **Nota de Estudio:** El código fuente principal de este proyecto (`app.py`, `servidor.py`, `socket_manager.py`) está extensamente documentado y comentado línea por línea. Esto fue diseñado específicamente para facilitar el estudio y la comprensión técnica de la arquitectura de sockets y redes.
 
 ## 2. Requisitos Previos
 
@@ -51,68 +53,65 @@ Sigue estos pasos para configurar el entorno del proyecto:
     pip install Flask
     ```
 
-## 4. Configuración del Firewall (Usuarios de Windows)
+## 4. Configuración de Red
 
-Para que el chat funcione correctamente entre diferentes computadoras en la misma red (especialmente para recibir mensajes entrantes y usar Multicast/Broadcast), es **necesario abrir el puerto 65432** en el Firewall de Windows.
+Por defecto, la aplicación está configurada para probarse en la misma máquina (`127.0.0.1`). 
+Si deseas usarla entre varias computadoras de una red local:
 
-En la carpeta `scripts_red` se proporcionan dos utilidades para facilitar esto:
-
-1.  **Para abrir los puertos:**
-    *   Navega a la carpeta `scripts_red`.
-    *   Haz clic derecho sobre el archivo `abrir_puertos.bat` y selecciona **"Ejecutar como administrador"**.
-    *   El script creará las reglas necesarias en el Firewall para TCP y UDP.
-
-2.  **Para cerrar los puertos (cuando termines de usar la app):**
-    *   Navega a la carpeta `scripts_red`.
-    *   Haz clic derecho sobre el archivo `cerrar_puertos.bat` y selecciona **"Ejecutar como administrador"**.
-    *   El script eliminará las reglas creadas, manteniendo tu equipo seguro.
-
-*(Usuarios de Linux/macOS: deberán abrir el puerto 65432 TCP/UDP en sus respectivos firewalls, ej. `ufw allow 65432` en Ubuntu).*
+1. Averigua la dirección IP local de la computadora que hará de Servidor.
+2. Abre el archivo `socket_manager.py`.
+3. Modifica la variable `SERVER_IP` (actualmente configurada como `"192.168.43.140"` por defecto) reemplazándola con la IP actual de la computadora servidor.
+4. Asegúrate de abrir el puerto `65432` en el Firewall de Windows usando los scripts incluidos en `scripts_red`.
 
 ## 5. Cómo Ejecutar la Aplicación
 
-Para iniciar el servidor de chat, ejecuta el siguiente comando en la terminal desde la carpeta del proyecto:
+Para que el sistema funcione, necesitas iniciar tanto el servidor central como al menos un cliente.
 
+**Paso 1: Iniciar el Servidor Central**
+Abre una terminal y ejecuta:
+```bash
+python servidor.py
+```
+Verás un mensaje indicando que el servidor ha iniciado en el puerto 65432. Déjalo corriendo.
+
+**Paso 2: Iniciar el Cliente Web**
+Abre *otra* terminal (o abre terminales en otras computadoras si configuraste la IP de red) y ejecuta:
 ```bash
 python app.py
 ```
 
-Verás una salida similar a esta, indicando que los hilos de escucha y el servidor web están listos:
-
+Verás una salida similar a esta:
 ```
-[*] Hilo TCP: Escuchando mensajes en el puerto 65432...
-[*] Hilo UDP: Escuchando broadcasts y multicasts en el puerto 65432...
-[*] Iniciando servidor web Flask...
- * Serving Flask app 'app'
- * Running on http://0.0.0.0:5000
+[*] Iniciando servidor web Flask en puerto 5000...
+[*] Accede a http://localhost:5000 desde el navegador.
 ```
 
 ## 6. Cómo Usar el Chat
 
-Para probar el chat, necesitarás al menos dos computadoras en la misma red local con los puertos configurados (o puedes probarlo en una sola usando diferentes pestañas).
+Para probar el chat, asegúrate de que `servidor.py` esté corriendo y luego inicia tantas instancias de `app.py` como desees (si las inicias en la misma máquina, cada `app.py` tomará un puerto web diferente automáticamente, ej. 5000, 5001, 5002...).
 
-1.  **Inicia la aplicación** en las máquinas deseadas.
-2.  **Abre un navegador web** y accede a:
+1.  **Abre un navegador web** y accede al puerto que te indicó la consola, por ejemplo:
     ```
     http://localhost:5000
     ```
-    *(Si accedes desde otra máquina a tu servidor web, usa `http://<la-IP-de-tu-maquina>:5000`)*
 
 ### La Interfaz
 
 *   **Panel Central (Mensajes):** Muestra los mensajes de la conversación que tienes seleccionada actualmente.
 *   **Panel Derecho (Chats):** Muestra todos los chats disponibles:
-    *   **Broadcast (🌍):** Un canal general donde todos los miembros de la subred pueden leer y escribir.
-    *   **Grupos Multicast (👥):** Canales específicos a los que puedes unirte. Puedes hacer clic en la flecha de la pestaña para ver qué miembros han estado activos en ese grupo.
-    *   **Usuarios (👤):** Conversaciones directas (Unicast) con usuarios específicos que te han enviado un mensaje o a los que les has enviado.
+    *   **Broadcast (🌍):** Un canal general donde todos los clientes conectados pueden leer y escribir.
+    *   **Grupos Multicast (👥):** Canales específicos a los que puedes unirte para hablar con un subgrupo de usuarios.
+    *   **Usuarios (👤):** Conversaciones directas (Unicast/Anycast) con usuarios específicos.
 *   **Panel Inferior (Envío):**
-    *   **Modo:** Selecciona cómo quieres enviar tu mensaje (Unicast, Broadcast, Multicast, Anycast). Al seleccionar un chat del panel derecho, este modo se auto-configura.
+    *   **Modo:** Selecciona cómo quieres enviar tu mensaje (Unicast, Broadcast, Multicast, Anycast).
+    *   **Protocolo:** Permite forzar el envío usando TCP (seguro) o UDP (rápido).
     *   **IP Destino:** La IP del usuario (Unicast) o del grupo (Multicast).
     *   **Mensaje:** Tu texto a enviar.
 
 ### Funciones Principales
 
-*   **Chat General (Broadcast):** Selecciona "Broadcast" en el panel derecho. Cualquier mensaje que envíes aquí será recibido por todas las instancias del chat en tu red local.
-*   **Unirse a un Grupo (Multicast):** En la parte inferior del panel derecho, ingresa una IP Multicast (por ejemplo, `224.1.1.2`) y haz clic en "Unirse". Esto creará un nuevo canal privado donde solo los suscritos a esa IP recibirán los mensajes.
-*   **Mensajes Privados (Unicast):** Selecciona el modo "Unicast" en el panel inferior, introduce la IP del destino y envía un mensaje. Se creará automáticamente un nuevo chat directo con ese usuario.
-*   **Notificaciones:** Cuando recibas un mensaje de un chat que no estás viendo en ese momento, aparecerá una burbuja roja en el panel derecho indicando cuántos mensajes nuevos tienes.
+*   **Chat General (Broadcast):** Selecciona "Broadcast" en el panel derecho. El servidor retransmitirá el mensaje a todos los clientes.
+*   **Unirse a un Grupo (Multicast):** En la parte inferior del panel derecho, ingresa un nombre o IP Multicast (ej. `224.1.1.2`) y haz clic en "Unirse". Se creará un canal privado manejado por el servidor.
+*   **Mensajes Privados (Unicast):** Escribe un mensaje indicando la IP destino en el panel inferior, selecciona "Unicast" y envíalo.
+*   **Mensaje Aleatorio (Anycast):** Selecciona "Anycast", y el servidor le entregará el mensaje a un solo usuario al azar de la red.
+*   **Notificaciones:** Cuando recibas un mensaje en un chat que no estás viendo, aparecerá una burbuja roja en el panel derecho.

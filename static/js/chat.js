@@ -3,7 +3,7 @@ const POLLING_INTERVAL = 2000; // ms
 const MULTICAST_IP_DEFAULT = "224.1.1.1";
 
 // --- State ---
-let currentChat = "Broadcast";
+let currentChat = null;
 let messageCounts = {};
 let unreadCounts = {};
 let allMessagesHtml = "";
@@ -21,9 +21,12 @@ function renderMessages() {
   tempDiv.innerHTML = allMessagesHtml;
   const messages = tempDiv.querySelectorAll(".message[data-chat]");
 
-  const filtered = Array.from(messages).filter(
-    (msg) => msg.getAttribute("data-chat") === currentChat,
-  );
+  const isGroup = lastEstadoData && lastEstadoData.grupos && lastEstadoData.grupos.includes(currentChat);
+
+  const filtered = Array.from(messages).filter((msg) => {
+    const msgChat = msg.getAttribute("data-chat");
+    return msgChat === currentChat || (msgChat === "all" && !isGroup);
+  });
 
   const isScrolledToBottom =
     chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 50;
@@ -57,7 +60,7 @@ function pollMessages() {
 
       messages.forEach((msg) => {
         const chatId = msg.getAttribute("data-chat");
-        if (chatId) {
+        if (chatId && chatId !== "all") {
           newCounts[chatId] = (newCounts[chatId] || 0) + 1;
         }
       });
@@ -133,6 +136,9 @@ function renderChatsList() {
       } else {
         nodeHtml += `<div style="padding: 5px 10px 5px 30px; background: var(--input-bg); color: var(--text-color); font-size: 0.8em; font-style: italic; border-top: 1px solid var(--border-color);">Sin miembros conocidos</div>`;
       }
+      nodeHtml += `<div style="padding: 5px 10px 5px 30px; background: var(--input-bg); border-top: 1px solid var(--border-color);">
+        <a href="#" class="leave-group-link" data-group="${id}" style="color: var(--error); font-size: 0.8em; text-decoration: none;">Salir del grupo</a>
+      </div>`;
       nodeHtml += `</details>`;
     } else {
       nodeHtml += `<div class="chat-item" data-id="${id}" style="padding: 8px; cursor: pointer; display: flex; align-items: center; font-weight: ${isSelected ? "bold" : "normal"};">
@@ -145,23 +151,40 @@ function renderChatsList() {
     return nodeHtml;
   };
 
-  // 1. Broadcast
-  html += createChatNode("Broadcast", "Broadcast", "🌍");
+  // Chat General eliminado
 
   // 2. Grupos Multicast
   data.grupos.forEach((grupo) => {
+    if (!currentChat) selectChat(grupo);
     const members = data.miembros[grupo] || {};
     html += createChatNode(grupo, grupo, "👥", true, members);
   });
 
-  // 3. Usuarios Unicast
+  // 3. Usuarios Conectados
   const unicastUsers = data.miembros["Unicast/Anycast"] || {};
-  for (const [ip, hostname] of Object.entries(unicastUsers)) {
-    html += createChatNode(ip, `${hostname} (${ip})`, "👤");
+  if (Object.keys(unicastUsers).length > 0) {
+      html += `<div style="padding: 15px 5px 5px; font-size: 0.9em; font-weight: bold; color: var(--text-color); border-bottom: 1px solid var(--border-color); margin-bottom: 8px;">Usuarios Conectados</div>`;
+      for (const [ip, hostname] of Object.entries(unicastUsers)) {
+        if (!currentChat) selectChat(ip);
+        html += createChatNode(ip, `${hostname} (${ip})`, "🟢");
+      }
   }
 
   html += `</ul>`;
   chatsList.innerHTML = html;
+
+  const membersSelect = document.getElementById('group-members');
+  if (membersSelect) {
+      const selected = Array.from(membersSelect.selectedOptions).map(opt => opt.value);
+      membersSelect.innerHTML = "";
+      for (const [ip, hostname] of Object.entries(unicastUsers)) {
+          const opt = document.createElement("option");
+          opt.value = ip;
+          opt.textContent = `${hostname} (${ip})`;
+          if (selected.includes(ip)) opt.selected = true;
+          membersSelect.appendChild(opt);
+      }
+  }
 
   // Add event listeners to chat items
   chatsList.querySelectorAll(".chat-item").forEach((item) => {
@@ -185,6 +208,28 @@ function renderChatsList() {
       }
     });
   });
+
+  // Add event listeners to leave group links
+  chatsList.querySelectorAll(".leave-group-link").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const group = item.getAttribute("data-group");
+      if (group && confirm(`¿Seguro que deseas salir del grupo ${group}?`)) {
+        fetch("/leave_group", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `group=${encodeURIComponent(group)}`
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === "ok") {
+                if(currentChat === group) { currentChat = null; }
+                pollEstado();
+            }
+        });
+      }
+    });
+  });
 }
 
 /**
@@ -201,21 +246,21 @@ function selectChat(id) {
     const modeSelect = document.getElementById("mode");
     const ipInput = document.getElementById("ip");
     if (modeSelect && ipInput) {
-      if (id === "Broadcast") {
-        modeSelect.value = "broadcast";
-        handleModeChange({ target: modeSelect });
-      } else if (id.includes(".")) {
-        // Determine if multicast or unicast based on first octet
-        const firstOctet = parseInt(id.split(".")[0]);
-        if (firstOctet >= 224 && firstOctet <= 239) {
-          modeSelect.value = "multicast";
-          ipInput.value = id;
-          ipInput.disabled = false;
+      if (id !== "all") {
+        if (id.includes(".") && !isNaN(parseInt(id.split(".")[0]))) {
+          // Determine if multicast or unicast based on first octet
+          const firstOctet = parseInt(id.split(".")[0]);
+          if (firstOctet >= 224 && firstOctet <= 239) {
+            modeSelect.value = "multicast";
+          } else {
+            modeSelect.value = "unicast";
+          }
         } else {
-          modeSelect.value = "unicast";
-          ipInput.value = id;
-          ipInput.disabled = false;
+          // If it's a custom group name (no IP format)
+          modeSelect.value = "multicast";
         }
+        ipInput.value = id;
+        ipInput.disabled = false;
       }
     }
   }
@@ -328,6 +373,38 @@ function pollEstado() {
     .catch((err) => console.error("Error en polling de estado:", err));
 }
 
+/**
+ * Handle changing the display hostname
+ */
+function handleHostnameSubmit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+
+  fetch("/set_hostname", {
+    method: "POST",
+    body: formData,
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.status === "ok") {
+        const newName = document.getElementById("new-hostname").value;
+        const displayHostname = document.getElementById("display-hostname");
+        if (displayHostname) {
+            displayHostname.textContent = newName;
+        }
+        alert("Nombre actualizado correctamente");
+      } else {
+        alert("Error: " + data.message);
+      }
+    })
+    .catch((error) => {
+      console.error("Error cambiando nombre:", error);
+      alert("Ocurrió un error al cambiar el nombre.");
+    });
+}
+
+
 // --- Event Listeners ---
 
 // Se ejecuta cuando el DOM está completamente cargado
@@ -369,9 +446,30 @@ document.addEventListener("DOMContentLoaded", () => {
     handleModeChange({ target: modeSelect });
   }
 
+  const groupLabel = document.querySelector('label[for="group-ip"]');
+  if (groupLabel) groupLabel.textContent = "Nombre del Grupo:";
+  
+  const groupInput = document.getElementById("group-ip");
+  if (groupInput) groupInput.placeholder = "Ej. Mi Grupo";
+
   // 5. Manejar unirse a grupo multicast
   const joinGroupForm = document.getElementById("join-group-form");
   if (joinGroupForm) {
+    if (!document.getElementById("group-members")) {
+        const selectHtml = `
+          <label style="font-size: 0.9em; margin-top: 5px;">Invitar (Ctrl+Click):</label>
+          <select id="group-members" name="invitees" multiple style="width: 100%; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-color); border-radius: 4px; padding: 5px; min-height: 80px; font-family: inherit;">
+          </select>
+        `;
+        const btnGroup = joinGroupForm.querySelector('div[style="display: flex; gap: 10px"]');
+        if (btnGroup) {
+            const div = document.createElement("div");
+            div.innerHTML = selectHtml;
+            while (div.firstChild) {
+                joinGroupForm.insertBefore(div.firstChild, btnGroup);
+            }
+        }
+    }
     joinGroupForm.addEventListener("submit", handleJoinGroupSubmit);
   }
 
@@ -395,5 +493,11 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.setItem("darkMode", "false");
       }
     });
+  }
+
+  // 7. Manejar cambio de nombre
+  const hostnameForm = document.getElementById("hostname-form");
+  if (hostnameForm) {
+    hostnameForm.addEventListener("submit", handleHostnameSubmit);
   }
 });

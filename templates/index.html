@@ -14,13 +14,19 @@
     </head>
     <body>
         <div class="header">
-            <h1>{{ local_ip }} - {{ hostname }}</h1>
-            <div class="theme-switch">
-                <span>Modo Oscuro</span>
-                <label class="switch">
-                    <input type="checkbox" id="dark-mode-toggle" />
-                    <span class="slider"></span>
-                </label>
+            <h1 id="header-title">{{ local_ip }} - <span id="display-hostname">{{ hostname }}</span></h1>
+            <div class="header-controls" style="display: flex; gap: 20px; align-items: center;">
+                <form id="hostname-form" style="display: flex; gap: 5px; align-items: center; margin: 0;">
+                    <input type="text" id="new-hostname" name="hostname" value="{{ hostname }}" required placeholder="Tu nombre" style="padding: 5px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-color);">
+                    <button type="submit" style="padding: 5px 10px; border-radius: 4px;">Guardar</button>
+                </form>
+                <div class="theme-switch" style="margin: 0;">
+                    <span>Modo Oscuro</span>
+                    <label class="switch">
+                        <input type="checkbox" id="dark-mode-toggle" />
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -65,7 +71,6 @@
                             class="join-group-section"
                             style="margin-top: auto"
                         >
-                            <h3>Unirse a Grupo Multicast</h3>
                             <form
                                 id="join-group-form"
                                 style="
@@ -104,6 +109,13 @@
                                 <option value="broadcast">Broadcast</option>
                                 <option value="multicast">Multicast</option>
                                 <option value="anycast">Anycast</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="protocol">Protocolo:</label>
+                            <select id="protocol" name="protocol">
+                                <option value="TCP" selected>TCP</option>
+                                <option value="UDP">UDP</option>
                             </select>
                         </div>
                         <div class="form-group">

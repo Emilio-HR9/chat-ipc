@@ -1,386 +1,358 @@
-import json
-import socket
-import struct
-import threading
+import socket # Importa el módulo para usar sockets de red
+import threading # Importa el módulo para manejar hilos (permitiendo que tareas se ejecuten en paralelo)
+import json # Importa json para manipular datos en formato JSON
+import time # Importa time para manejar retrasos (sleeps)
 
+# --- CONFIGURACIÓN DE RED ---
+# Asegúrate de poner aquí la IP de tu servidor (sea la local o la de ZeroTier)
+SERVER_IP = "192.168.43.140" # IP del servidor al que nos vamos a conectar. Cambiar si el servidor está en otra máquina.
+PORT = 65432 # Puerto que usa el servidor para la comunicación TCP y UDP
+BUFFER_SIZE = 1024 # Tamaño del buffer de recepción de datos (en bytes)
+
+current_hostname = socket.gethostname() # Obtiene el nombre del equipo actual y lo asigna como nombre de usuario por defecto
+joined_groups = set() # Crea un conjunto (set) vacío para guardar a qué grupos multicast estamos suscritos (evita duplicados)
+known_members = {}  # Diccionario para almacenar los miembros conocidos en cada sala/grupo
+messages = [] # Lista que almacenará todos los mensajes que se muestran en el chat
+client_socket = None # Variable global para el socket TCP, inicializada en None
+web_port = 5000 # Puerto web por defecto (será actualizado por app.py si es necesario)
+
+# SOCKET UDP DEL CLIENTE
+# Crea un socket UDP (SOCK_DGRAM) para enviar y recibir paquetes UDP
+client_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# Enlaza el socket UDP en todas las interfaces y le pide al sistema que le asigne un puerto libre (0)
+client_udp.bind(("0.0.0.0", 0))
+
+def set_web_port(port):
+    # Función llamada por app.py para actualizar qué puerto web estamos usando
+    global web_port
+    web_port = port
+
+def get_client_id():
+    # Devuelve el identificador único del cliente en formato "IP:PUERTO_WEB"
+    return f"{get_local_ip()}:{web_port}"
 
 def get_local_ip():
-    """Obtiene la IP local de la interfaz de red principal."""
+    # Intenta descubrir cuál es nuestra IP en la red local
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Nos conectamos a una IP de prueba para forzar al SO a elegir la interfaz principal
-        s.connect(("10.255.255.255", 1))
-        local_ip = s.getsockname()[0]
+        # Se conecta a un servidor externo (Google DNS) pero sin enviar nada, solo para forzar a la tarjeta de red a revelar la IP de salida
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0] # Extrae la IP de la conexión falsa
     except Exception:
-        local_ip = "127.0.0.1"
+        ip = '127.0.0.1' # Si falla (ej. sin internet), asume localhost
     finally:
-        s.close()
-    return local_ip
+        s.close() # Siempre cierra el socket temporal
+    return ip
 
-
-def get_directed_broadcast_ip():
-    """
-    Obtiene la IP local real y calcula la dirección de broadcast dinámicamente
-    leyendo la máscara de subred real del sistema operativo.
-    """
-    import ipaddress
-    import os
-    import subprocess
-
-    local_ip = get_local_ip()
-
-    if local_ip == "127.0.0.1":
-        return "255.255.255.255"
-
-    prefix_length = 24  # Valor por defecto /24
-
-    try:
-        if os.name == "nt":
-            # Windows: Usar PowerShell para obtener la máscara de la IP
-            cmd = f"powershell -NoProfile -Command \"(Get-NetIPAddress -IPAddress '{local_ip}' -ErrorAction SilentlyContinue).PrefixLength\""
-            output = subprocess.check_output(cmd, shell=True, text=True).strip()
-            if output:
-                prefix = output.splitlines()[0].strip()
-                if prefix.isdigit():
-                    prefix_length = int(prefix)
-        else:
-            # Linux/macOS: Intentar extraer de 'ip addr'
-            cmd = f"ip -o -f inet addr show | grep '{local_ip}'"
-            output = subprocess.check_output(cmd, shell=True, text=True).strip()
-            if "/" in output:
-                part = output.split(f"{local_ip}/")[1]
-                prefix = part.split()[0]
-                if prefix.isdigit():
-                    prefix_length = int(prefix)
-    except Exception as e:
-        print(
-            f"[*] No se pudo leer la máscara exacta del SO, usando /{prefix_length}. Error: {e}"
-        )
-
-    try:
-        # Calcula matemáticamente la dirección de broadcast real
-        network = ipaddress.IPv4Network(f"{local_ip}/{prefix_length}", strict=False)
-        return str(network.broadcast_address)
-    except Exception:
-        # Fallback de emergencia
-        ip_parts = local_ip.split(".")
-        ip_parts[3] = "255"
-        return ".".join(ip_parts)
-
-
-# Lista global para almacenar los mensajes de chat
-messages = []
-
-# Puerto para la comunicación
-PORT = 65432
-# Grupo multicast por defecto
-MULTICAST_GROUP = "224.1.1.1"
-
-# Variables globales para el socket UDP y los grupos a los que estamos unidos
-udp_socket = None
-joined_groups = set([MULTICAST_GROUP])
-known_members = {}
-
-
-def tcp_listener():
-    """
-    Hilo en segundo plano que escucha conexiones TCP entrantes (Unicast).
-    """
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    try:
-        server_socket.bind(("0.0.0.0", PORT))
-        server_socket.listen(5)
-        print(f"[*] Hilo TCP: Escuchando mensajes en el puerto {PORT}...")
-    except Exception as e:
-        print(f"[!] Hilo TCP: Error al iniciar el servidor en el puerto {PORT}: {e}")
-        return
-
-    while True:
+def connect_to_server():
+    # Hilo encargado de conectarse al servidor por TCP y escuchar mensajes entrantes
+    global client_socket, current_hostname
+    local_ip = get_client_id() # Toma la IP local
+    
+    while True: # Bucle infinito por si el servidor se cae, intentará reconectar
         try:
-            conn, addr = server_socket.accept()
-            with conn:
-                data = conn.recv(1024)
-                if data:
-                    decoded_msg = data.decode("utf-8")
-                    group_name = "Unicast/Anycast"
-                    msg_type = "message"
-                    try:
-                        parsed = json.loads(decoded_msg)
-                        hostname = parsed.get("hostname", "Unknown")
-                        msg_text = parsed.get("message", decoded_msg)
-                        group_name = parsed.get("group", group_name)
-                        msg_type = parsed.get("type", "message")
-                        if hostname != "Unknown":
-                            if group_name not in known_members:
-                                known_members[group_name] = {}
-                            known_members[group_name][addr[0]] = hostname
-                    except Exception:
-                        hostname = "Unknown"
-                        msg_text = decoded_msg
-
-                    if msg_type == "discovery":
-                        continue
-
-                    formatted_msg = f'<span class="other">[UNICAST from {hostname} (<a href="#" class="ip-link" data-ip="{addr[0]}">{addr[0]}</a>)]</span> {msg_text}'
-                    chat_id = addr[0]
-                    messages.append({"chat_id": chat_id, "html": formatted_msg})
-                    print(f"[*] Recibido de {hostname} ({addr[0]}): {msg_text}")
-        except Exception as e:
-            print(f"[!] Hilo TCP: Error procesando conexión: {e}")
-
-
-def udp_listener():
-    """
-    Hilo en segundo plano que escucha datagramas UDP (Broadcast y Multicast).
-    """
-    global udp_socket
-    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    try:
-        # Escuchar en todas las interfaces en el puerto especificado
-        udp_socket.bind(("", PORT))
-
-        # Unirse al grupo multicast por defecto
-        local_ip = get_local_ip()
-        mreq = struct.pack(
-            "4s4s", socket.inet_aton(MULTICAST_GROUP), socket.inet_aton(local_ip)
-        )
-        udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-
-        print(
-            f"[*] Hilo UDP: Escuchando broadcasts y multicasts en el puerto {PORT}..."
-        )
-    except Exception as e:
-        print(f"[!] Hilo UDP: Error al iniciar el listener: {e}")
-        return
-
-    while True:
-        try:
-            # Recibir datos (hasta 1024 bytes)
-            data, addr = udp_socket.recvfrom(1024)
-            if data:
-                decoded_msg = data.decode("utf-8")
-                group_name = "Multicast/Broadcast"
-                msg_type = "message"
-                try:
-                    parsed = json.loads(decoded_msg)
-                    hostname = parsed.get("hostname", "Unknown")
-                    msg_text = parsed.get("message", decoded_msg)
-                    group_name = parsed.get("group", group_name)
-                    msg_type = parsed.get("type", "message")
-                    if hostname != "Unknown":
-                        if group_name not in known_members:
-                            known_members[group_name] = {}
-                        known_members[group_name][addr[0]] = hostname
-                except Exception:
-                    hostname = "Unknown"
-                    msg_text = decoded_msg
-
-                if msg_type == "discovery":
-                    continue
-
-                # Para evitar mostrar nuestros propios mensajes en la interfaz si es un eco
-                # (Una solución robusta usaría un ID de mensaje)
-                if (
-                    messages
-                    and f"-> {MULTICAST_GROUP}" in messages[-1]
-                    and msg_text in messages[-1]
-                ):
-                    continue
-                if (
-                    messages
-                    and "-> &lt;broadcast&gt;" in messages[-1]
-                    and msg_text in messages[-1]
-                ):
-                    continue
-
-                formatted_msg = f'<span class="other">[UDP from {hostname} (<a href="#" class="ip-link" data-ip="{addr[0]}">{addr[0]}</a>)]</span> {msg_text}'
-                chat_id = (
-                    group_name
-                    if group_name not in ["Multicast/Broadcast", "Unicast/Anycast"]
-                    else (
-                        "Broadcast" if group_name == "Multicast/Broadcast" else addr[0]
-                    )
-                )
-                messages.append({"chat_id": chat_id, "html": formatted_msg})
-                print(f"[*] Recibido UDP de {hostname} ({addr[0]}): {msg_text}")
-        except Exception as e:
-            print(f"[!] Hilo UDP: Error procesando datagrama: {e}")
-
-
-def join_multicast_group(group_ip):
-    """
-    Permite unirse a un nuevo grupo multicast en tiempo de ejecución.
-    """
-    global udp_socket
-    if not udp_socket:
-        return False, "El socket UDP no está inicializado."
-
-    if group_ip in joined_groups:
-        return False, "Ya estás en este grupo."
-
-    try:
-        local_ip = get_local_ip()
-        mreq = struct.pack(
-            "4s4s", socket.inet_aton(group_ip), socket.inet_aton(local_ip)
-        )
-        udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        joined_groups.add(group_ip)
-
-        formatted_msg = f'<span class="system" style="color: #007bff; font-weight: bold;">[Sistema] Te has unido al grupo multicast {group_ip}</span>'
-        messages.append({"chat_id": group_ip, "html": formatted_msg})
-        return True, "Unido exitosamente"
-    except Exception as e:
-        return False, f"Error uniéndose al grupo: {e}"
-
-
-def send_message(mode, dest_ip, message_text):
-    """
-    Envía un mensaje según el modo seleccionado (unicast, broadcast, multicast, anycast).
-    """
-    display_ip = dest_ip
-    group_name = "Unknown"
-    try:
-        if mode in ["unicast", "anycast"]:
-            group_name = "Unicast/Anycast"
+            # Crea un nuevo socket TCP y se conecta al servidor
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.settimeout(2.0)
-            client_socket.connect((dest_ip, PORT))
-            payload = json.dumps(
-                {
-                    "hostname": socket.gethostname(),
-                    "message": message_text,
-                    "group": group_name,
-                }
-            )
-            client_socket.sendall(payload.encode("utf-8"))
-            client_socket.close()
+            client_socket.connect((SERVER_IP, PORT))
+            
+            # Prepara el payload inicial de registro enviando el nombre y la IP al servidor
+            reg_payload = json.dumps({"type": "register", "hostname": current_hostname, "sender_ip": local_ip})
+            client_socket.sendall((reg_payload + "\n").encode("utf-8")) # Envía el registro
+            
+            # Dar tiempo al servidor para registrar TCP antes del UDP
+            time.sleep(0.5)
+            
+            # Envía también un mensaje de registro UDP para que el servidor sepa nuestro puerto UDP
+            udp_reg = json.dumps({"type": "udp_register", "sender_ip": local_ip})
+            client_udp.sendto((udp_reg + "\n").encode("utf-8"), (SERVER_IP, PORT))
+            
+            # Si nos desconectamos y volvemos a conectar, nos re-inscribimos en nuestros grupos
+            for g in joined_groups:
+                join_payload = json.dumps({"type": "join", "group": g})
+                client_socket.sendall((join_payload + "\n").encode("utf-8"))
+            
+            buffer_datos = "" # Buffer para acumular fragmentos de mensajes TCP
+            while True: # Bucle de escucha constante sobre la conexión TCP
+                data = client_socket.recv(BUFFER_SIZE) # Espera recibir datos
+                if not data: break # Si llega vacío, se cortó la conexión; sale del bucle
+                
+                buffer_datos += data.decode("utf-8") # Pasa los datos de bytes a string
+                while "\n" in buffer_datos: # Procesa línea a línea
+                    linea, buffer_datos = buffer_datos.split("\n", 1) # Parte el string
+                    if not linea.strip(): continue # Omite si está vacío
+                    
+                    try:
+                        parsed = json.loads(linea) # Intenta decodificar el JSON
+                        msg_type = parsed.get("type", "message") # Saca el tipo de mensaje
+                        sender_ip = parsed.get("sender_ip", "Unknown") # Quién lo envió
+                        hostname = parsed.get("hostname", "Unknown") # El nombre de quien lo envió
+                        mode = parsed.get("mode", "broadcast") # El modo (unicast, broadcast, etc.)
+                        group_name = parsed.get("group", "Broadcast") # A qué grupo/IP iba destinado
+                        protocol_label = parsed.get("protocol", "TCP") # Por qué protocolo llegó
+                        
+                        # Mantiene la lista de usuarios activa para poder darles clic en la interfaz
+                        if sender_ip != "Unknown" and hostname != "Unknown" and msg_type != "disconnect":
+                            cat = group_name if mode == "multicast" else "Unicast/Anycast" # Decide la categoría en la interfaz
+                            if cat not in known_members: known_members[cat] = {} # Crea la categoría si no existe
+                            known_members[cat][sender_ip] = hostname # Añade/Actualiza al miembro
+                            
+                        # Si es un aviso de que alguien se desconectó
+                        if msg_type == "disconnect":
+                            if "Unicast/Anycast" in known_members:
+                                known_members["Unicast/Anycast"].pop(sender_ip, None) # Lo saca de la lista general
+                            for g in known_members:
+                                if g != "Unicast/Anycast":
+                                    known_members[g].pop(sender_ip, None) # Lo saca de todos los grupos
+                            continue # Pasa al siguiente mensaje
+                        
+                        if msg_type == "discovery": continue # Si es heartbeat puro, lo ignora (ya actualizó su presencia arriba)
+                        
+                        # Si alguien nos invitó a un grupo
+                        if msg_type == "invite":
+                            inv_group = parsed.get("group")
+                            if inv_group and inv_group not in joined_groups:
+                                joined_groups.add(inv_group) # Añade a la lista local
+                                
+                                # Enviar join al servidor para registrarnos en el grupo a nivel servidor
+                                join_payload = json.dumps({"type": "join", "group": inv_group})
+                                client_socket.sendall((join_payload + "\n").encode("utf-8"))
+                                
+                                # Añade un mensaje de sistema a la lista de mensajes de la interfaz
+                                messages.append({"chat_id": inv_group, "html": f'<span class="system" style="color: #007bff; font-weight: bold;">[Sistema] Has sido añadido al grupo {inv_group} por {hostname}</span>'})
+                            continue
 
-        elif mode == "broadcast":
-            target_broadcast = get_directed_broadcast_ip()
-            display_ip = f"&lt;broadcast: {target_broadcast}&gt;"
-            group_name = "Broadcast"
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            payload = json.dumps(
-                {
-                    "hostname": socket.gethostname(),
-                    "message": message_text,
-                    "group": group_name,
-                }
-            )
-            # Enviar a la dirección de broadcast dirigida
-            client_socket.sendto(payload.encode("utf-8"), (target_broadcast, PORT))
-            client_socket.close()
+                        # Si alguien salió de un grupo
+                        if msg_type == "left_group":
+                            g_left = parsed.get("group")
+                            s_left = parsed.get("sender_ip")
+                            h_left = parsed.get("hostname", "Un usuario")
+                            if g_left in known_members and s_left in known_members[g_left]:
+                                known_members[g_left].pop(s_left, None) # Lo borra del registro local del grupo
+                                if g_left in joined_groups: # Si estamos en el grupo, muestra un aviso
+                                    messages.append({"chat_id": g_left, "html": f'<span class="system" style="color: orange; font-weight: bold;">[Sistema] {h_left} ha salido del grupo.</span>', "is_self": False})
+                            continue
+                        
+                        # Si nosotros enviamos un Anycast, el servidor nos devuelve este recibo indicando a quién le tocó
+                        if msg_type == "anycast_receipt":
+                            recip_host = parsed.get("recipient_hostname")
+                            recip_ip = parsed.get("recipient_ip")
+                            m_text = parsed.get("message", "")
+                            protocol_label = parsed.get("protocol", "TCP")
+                            formatted_msg = f'<span class="self">[Tú ANYCAST -> {recip_host} ({recip_ip}) | {protocol_label}]</span> {m_text}'
+                            # Ponemos el mensaje en la pestaña de chat del que lo recibió para que lo veamos
+                            messages.append({"chat_id": recip_ip, "html": formatted_msg, "is_self": True})
+                            continue
+                            
+                        # Si es un mensaje de chat con texto
+                        if "message" in parsed:
+                            msg_text = parsed["message"]
+                            
+                            # --- EL ENRUTAMIENTO CORRECTO DE LAS PESTAÑAS ---
+                            if mode in ["unicast", "anycast", "broadcast"]:
+                                chat_id = sender_ip  # Va a la pestaña del usuario específico
+                            elif mode == "multicast":
+                                chat_id = group_name # Va a la pestaña del grupo
+                            else:
+                                chat_id = "all" # Va a la principal
+                            
+                            # Crea el bloque HTML para mostrar en pantalla
+                            formatted_msg = f'<span class="other">[De {hostname} (<a href="#" class="ip-link" data-ip="{sender_ip}">{sender_ip}</a>) | {protocol_label}]</span> {msg_text}'
+                            messages.append({"chat_id": chat_id, "html": formatted_msg, "is_self": False}) # Guarda
+                            
+                    except json.JSONDecodeError: pass # Ignora si el JSON está mal
+        except Exception:
+            # Si hay cualquier error de red, cierra el socket y espera 3 segundos antes de reintentar
+            if client_socket: client_socket.close()
+            time.sleep(3)
 
-        elif mode == "multicast":
-            display_ip = dest_ip if dest_ip else MULTICAST_GROUP
-            group_name = display_ip
-
-            # Auto unirse al grupo si no estamos en él
-            if display_ip not in joined_groups:
-                join_multicast_group(display_ip)
-
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            ttl = struct.pack("b", 1)
-            client_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-
-            # Establecer la interfaz de salida para multicast
-            local_ip = get_local_ip()
-            client_socket.setsockopt(
-                socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip)
-            )
-
-            payload = json.dumps(
-                {
-                    "hostname": socket.gethostname(),
-                    "message": message_text,
-                    "group": group_name,
-                }
-            )
-            client_socket.sendto(payload.encode("utf-8"), (display_ip, PORT))
-            client_socket.close()
-
-        # Agregar a nuestra propia lista para ver qué enviamos
-        formatted_msg = f'<span class="self">[Tú {mode.upper()} -> {display_ip}]</span> {message_text}'
-        chat_id = (
-            group_name
-            if group_name not in ["Unicast/Anycast", "Broadcast"]
-            else (dest_ip if mode != "broadcast" else "Broadcast")
-        )
-        messages.append({"chat_id": chat_id, "html": formatted_msg})
-
-    except socket.timeout:
-        error_msg = f'<span class="error">[Error timeout conectando a {dest_ip}]</span> El destino no responde.'
-        chat_id = dest_ip if dest_ip else "Broadcast"
-        messages.append({"chat_id": chat_id, "html": error_msg})
-    except Exception as e:
-        error_msg = f'<span class="error">[Error enviando a {dest_ip}]</span> {e}'
-        chat_id = dest_ip if dest_ip else "Broadcast"
-        messages.append({"chat_id": chat_id, "html": error_msg})
-
+def listen_udp():
+    # Hilo encargado de escuchar de forma independiente los paquetes UDP (Broadcast/Multicast enviados por UDP)
+    global current_hostname
+    while True:
+        try:
+            # Recibe directamente del socket UDP un paquete de datos
+            data_bytes, addr = client_udp.recvfrom(BUFFER_SIZE)
+            linea = data_bytes.decode("utf-8").strip() # Convierte a texto
+            if not linea: continue
+            
+            try:
+                parsed = json.loads(linea) # Interpreta el JSON
+                msg_type = parsed.get("type", "message")
+                sender_ip = parsed.get("sender_ip", "Unknown")
+                hostname = parsed.get("hostname", "Unknown")
+                mode = parsed.get("mode", "broadcast")
+                group_name = parsed.get("group", "Broadcast")
+                protocol_label = parsed.get("protocol", "UDP")
+                
+                # Actualiza también la lista de conocidos con los mensajes que llegan por UDP
+                if sender_ip != "Unknown" and hostname != "Unknown" and msg_type != "disconnect":
+                    cat = group_name if mode == "multicast" else "Unicast/Anycast"
+                    if cat not in known_members: known_members[cat] = {}
+                    known_members[cat][sender_ip] = hostname
+                    
+                # Si llega el aviso de desconexión por UDP
+                if msg_type == "disconnect":
+                    if "Unicast/Anycast" in known_members:
+                        known_members["Unicast/Anycast"].pop(sender_ip, None)
+                    for g in known_members:
+                        if g != "Unicast/Anycast":
+                            known_members[g].pop(sender_ip, None)
+                    continue
+                
+                if msg_type == "discovery": continue
+                
+                # Si llega la invitación a grupo por UDP
+                if msg_type == "invite":
+                    inv_group = parsed.get("group")
+                    if inv_group and inv_group not in joined_groups:
+                        joined_groups.add(inv_group)
+                        
+                        # Enviar join al servidor (sobre TCP ya que es más seguro y lo requiere el servidor TCP)
+                        if client_socket and client_socket.fileno() != -1:
+                            join_payload = json.dumps({"type": "join", "group": inv_group})
+                            client_socket.sendall((join_payload + "\n").encode("utf-8"))
+                            
+                        messages.append({"chat_id": inv_group, "html": f'<span class="system" style="color: #007bff; font-weight: bold;">[Sistema] Has sido añadido al grupo {inv_group} por {hostname}</span>'})
+                    continue
+                
+                # Recibo de Anycast versión UDP
+                if msg_type == "anycast_receipt":
+                    recip_host = parsed.get("recipient_hostname")
+                    recip_ip = parsed.get("recipient_ip")
+                    m_text = parsed.get("message", "")
+                    protocol_label = parsed.get("protocol", "UDP")
+                    formatted_msg = f'<span class="self">[Tú ANYCAST -> {recip_host} ({recip_ip}) | {protocol_label}]</span> {m_text}'
+                    messages.append({"chat_id": recip_ip, "html": formatted_msg, "is_self": True})
+                    continue
+                
+                # Procesa mensaje de chat en UDP
+                if "message" in parsed:
+                    msg_text = parsed["message"]
+                    
+                    if mode in ["unicast", "anycast", "broadcast"]:
+                        chat_id = sender_ip
+                    elif mode == "multicast":
+                        chat_id = group_name
+                    else:
+                        chat_id = "all"
+                    
+                    # Formatea e inserta el mensaje UDP en la interfaz
+                    formatted_msg = f'<span class="other">[De {hostname} (<a href="#" class="ip-link" data-ip="{sender_ip}">{sender_ip}</a>) | {protocol_label}]</span> {msg_text}'
+                    messages.append({"chat_id": chat_id, "html": formatted_msg, "is_self": False})
+                    
+            except json.JSONDecodeError: pass
+        except Exception:
+            time.sleep(1) # Si hay un error al leer UDP, espera 1 segundo y reintenta
 
 def discovery_broadcaster():
-    """
-    Hilo en segundo plano que anuncia la presencia cíclicamente a la red.
-    """
-    import time
+    # Hilo que se ejecuta cada 5 segundos para anunciar al servidor que seguimos "vivos" y estamos en X grupos
+    global client_socket, current_hostname
     while True:
-        try:
-            my_hostname = socket.gethostname()
-            
-            # 1. Anunciarse por UDP Broadcast (para Unicast/Anycast)
+        if client_socket and client_socket.fileno() != -1: # Si estamos conectados
+            my_ip = get_client_id()
             try:
-                target_broadcast = get_directed_broadcast_ip()
-                b_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                b_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                # Heartbeat de registro UDP para que el servidor nunca olvide nuestra ruta UDP (por si el puerto/ip de la tabla NAT cambió)
+                udp_reg = json.dumps({"type": "udp_register", "sender_ip": my_ip})
+                client_udp.sendto((udp_reg + "\n").encode("utf-8"), (SERVER_IP, PORT))
                 
-                payload_bcast = json.dumps({
-                    "type": "discovery",
-                    "hostname": my_hostname,
-                    "group": "Unicast/Anycast"
+                # Envía heartbeat TCP genérico
+                payload = json.dumps({
+                    "type": "discovery", "hostname": current_hostname, "group": "Unicast/Anycast",
+                    "mode": "broadcast", "sender_ip": my_ip
                 })
-                b_socket.sendto(payload_bcast.encode("utf-8"), (target_broadcast, PORT))
-                b_socket.close()
-            except Exception as e:
-                pass
+                client_socket.sendall((payload + "\n").encode("utf-8"))
                 
-            # 2. Anunciarse en los grupos multicast activos
-            local_ip = get_local_ip()
-            for group_ip in list(joined_groups):
-                try:
-                    m_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    ttl = struct.pack("b", 1)
-                    m_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-                    m_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip))
-                    
-                    payload_mcast = json.dumps({
-                        "type": "discovery",
-                        "hostname": my_hostname,
-                        "group": group_ip
+                # Envía heartbeats TCP para reafirmar nuestra presencia en cada grupo en el que estamos
+                for g in list(joined_groups):
+                    payload_g = json.dumps({
+                        "type": "discovery", "hostname": current_hostname, "group": g,
+                        "mode": "multicast", "sender_ip": my_ip
                     })
-                    m_socket.sendto(payload_mcast.encode("utf-8"), (group_ip, PORT))
-                    m_socket.close()
-                except Exception as e:
-                    pass
-                    
-        except Exception as e:
-            pass
-            
-        time.sleep(5)
+                    client_socket.sendall((payload_g + "\n").encode("utf-8"))
+            except Exception: pass
+        time.sleep(5) # Espera 5 segundos antes del siguiente ping
 
-
-def start_listener_threads():
-    """
-    Inicia los hilos de los listeners TCP, UDP y descubrimiento.
-    """
-    tcp_thread = threading.Thread(target=tcp_listener, daemon=True)
-    udp_thread = threading.Thread(target=udp_listener, daemon=True)
-    discovery_thread = threading.Thread(target=discovery_broadcaster, daemon=True)
+def send_message(mode, target, message_text, protocol="TCP"):
+    # Función que se usa desde app.py para enviar cualquier mensaje
+    global client_socket, current_hostname
+    # Evita enviar si no hay conexión TCP activa (incluso para UDP necesitamos conexión lógica)
+    if not client_socket or client_socket.fileno() == -1: return
     
-    tcp_thread.start()
-    udp_thread.start()
-    discovery_thread.start()
+    local_ip = get_client_id()
+    group_name = target if mode != "broadcast" else "Broadcast"
+    display_ip = target if mode != "broadcast" else "Todos"
+    
+    try:
+        # Prepara el cuerpo principal del mensaje
+        payload = json.dumps({
+            "hostname": current_hostname, "message": message_text, "mode": mode,
+            "group": group_name, "sender_ip": local_ip, "protocol": protocol
+        })
+        payload_bytes = (payload + "\n").encode("utf-8") # A bytes con terminador de línea
+        
+        # Decide por qué socket mandarlo según lo que elija el usuario
+        if protocol == "UDP":
+            client_udp.sendto(payload_bytes, (SERVER_IP, PORT)) # Envío directo al server UDP
+        else:
+            client_socket.sendall(payload_bytes) # Envío directo al server TCP
+        
+        # --- EL AUTO-ECO A LA PESTAÑA CORRECTA ---
+        # Si no es anycast (anycast espera el recibo desde el servidor antes de pintar el mensaje), lo pinta en nuestra pantalla ya mismo
+        if mode != "anycast":
+            if mode in ["unicast", "multicast"]:
+                chat_id = target
+            else:
+                chat_id = "all"
+                
+            # Agrega un mensaje que empieza con "[Tú...]"
+            formatted_msg = f'<span class="self">[Tú {mode.upper()} -> {display_ip} | {protocol}]</span> {message_text}'
+            messages.append({"chat_id": chat_id, "html": formatted_msg, "is_self": True})
+    except Exception: pass
+
+def join_multicast_group(group_ip, invitees=None):
+    # Función para unirse y opcionalmente invitar a otros a un grupo
+    global client_socket
+    joined_groups.add(group_ip) # Lo añade al registro local
+    if client_socket:
+        try:
+            # Pide al servidor unirse al grupo
+            payload = json.dumps({"type": "join", "group": group_ip})
+            client_socket.sendall((payload + "\n").encode("utf-8"))
+            
+            # Si se seleccionaron personas a invitar, manda comando de invite
+            if invitees:
+                inv_payload = json.dumps({"type": "invite", "group": group_ip, "invitees": invitees, "hostname": current_hostname})
+                client_socket.sendall((inv_payload + "\n").encode("utf-8"))
+        except Exception: pass
+    # Muestra aviso en la pestaña del grupo
+    messages.append({"chat_id": group_ip, "html": f'<span class="system" style="color: #007bff; font-weight: bold;">[Sistema] Te has unido a la sala {group_ip}</span>'})
+    return True, f"Unido exitosamente a {group_ip}"
+
+def leave_multicast_group(group_ip):
+    # Función para salir de un grupo
+    global client_socket
+    if group_ip in joined_groups:
+        joined_groups.remove(group_ip) # Lo quita localmente
+        if client_socket:
+            try:
+                # Le avisa al servidor que nos saque de su registro de ese grupo
+                payload = json.dumps({"type": "leave", "group": group_ip})
+                client_socket.sendall((payload + "\n").encode("utf-8"))
+            except Exception: pass
+        # Muestra en la pestaña que ya salimos
+        messages.append({"chat_id": group_ip, "html": f'<span class="system" style="color: red; font-weight: bold;">[Sistema] Has salido de la sala {group_ip}</span>'})
+        return True
+    return False
+
+def start_listener_threads(): 
+    # Función inicializadora, lanza los 3 hilos de trabajo pesado en modo 'daemon' (se cierran solos al salir de la app)
+    threading.Thread(target=connect_to_server, daemon=True).start()
+    threading.Thread(target=listen_udp, daemon=True).start()
+    threading.Thread(target=discovery_broadcaster, daemon=True).start()
+
+def get_current_hostname(): 
+    # Devuelve el hostname actual
+    return current_hostname
+def set_custom_hostname(name): 
+    # Actualiza el hostname cuando el usuario lo cambia en la web
+    global current_hostname; current_hostname = name

@@ -1,63 +1,70 @@
 # Arquitectura del Sistema: Socket-Web Bridge Multi-Protocolo
 
 ## 1. Estructura del Proyecto (Modular)
-El proyecto ha sido diseñado para separar responsabilidades en distintos archivos y directorios:
+El proyecto ha sido diseñado para separar responsabilidades en distintos archivos y directorios utilizando un modelo Cliente-Servidor:
 ```text
-Tarea7/
-├── app.py                 # Inicialización de Flask y enrutamiento (API y render_template).
-├── socket_manager.py      # Lógica core: Listeners TCP/UDP, envíos y estado en memoria.
+chat-ipc/
+├── servidor.py            # Servidor central: Enruta mensajes (TCP/UDP) y gestiona clientes y grupos.
+├── app.py                 # Cliente (Backend): Inicialización de Flask y enrutamiento (API web local).
+├── socket_manager.py      # Lógica core del cliente: Conexión al servidor central, Listeners TCP/UDP.
 ├── scripts_red/           # Scripts .bat para abrir/cerrar el firewall en Windows.
 ├── static/
 │   ├── css/
 │   │   └── style.css      # Estilos visuales (modo claro/oscuro, flexbox panels).
 │   └── js/
-│       └── chat.js        # Lógica de cliente: Polling, cambio de salas y notificaciones.
+│       └── chat.js        # Lógica de cliente (Frontend): Polling, cambio de salas y notificaciones.
 └── templates/
     ├── index.html         # Plantilla base (layout, formularios de chat y grupos).
     └── mensajes.html      # Fragmento HTML renderizado por Jinja para la lista de mensajes.
 ```
 
-## 2. Capa de Presentación (Frontend)
-+ *Interfaz*: Documento HTML dinámico. Se compone de un diseño en 3 paneles principales: Lista de mensajes, Selector de Chats y Controles de envío.
+## 2. Capa de Presentación (Frontend Web)
++ *Interfaz*: Documento HTML dinámico servido por `app.py`. Se compone de un diseño en 3 paneles principales: Lista de mensajes, Selector de Chats y Controles de envío.
 + *Componentes Clave*:
   + **Gestor de Salas (chat.js):** Controla qué "chat" (Unicast, Multicast, o Broadcast) está activo en el DOM filtrando dinámicamente el HTML recibido.
   + **Notificaciones:** Un sistema local en el cliente rastrea los incrementos en la lista de mensajes (por `chat_id`) para renderizar "burbujas" rojas de no leídos en chats inactivos.
 + *Mecanismo de Actualización*:
-  + *Polling Asíncrono Dual*: `chat.js` ejecuta `setInterval()` hacia dos endpoints:
-    1. `/mensajes`: Obtiene todo el historial HTML de mensajes. El cliente se encarga de filtrar y mostrar solo los que corresponden al grupo seleccionado.
-    2. `/estado`: Obtiene en JSON la lista actualizada de grupos multicast a los que se ha unido y los miembros descubiertos en la red.
+  + *Polling Asíncrono Dual*: `chat.js` ejecuta `setInterval()` hacia dos endpoints locales de Flask:
+    1. `/mensajes`: Obtiene todo el historial HTML de mensajes. El cliente web filtra y muestra solo los que corresponden al grupo seleccionado.
+    2. `/estado`: Obtiene en JSON la lista actualizada de grupos a los que se ha unido y los miembros descubiertos.
 
-## 3. Capa de Aplicación (Backend - Flask)
-+ *Servidor Web Local:* Instancia de Flask (`app.py`) expuesta en `0.0.0.0:5000`.
+## 3. Capa de Aplicación (Backend del Cliente - Flask)
++ *Servidor Web Local:* Instancia de Flask (`app.py`) expuesta en `0.0.0.0:5000` (o superior). Actúa como puente entre la web y los sockets.
 + *Estructuras de Datos (en `socket_manager.py`):*
-  + `messages`: Lista de diccionarios `{"chat_id": str, "html": str}` que representa todo el historial global.
-  + `joined_groups`: `set` para evitar unirse múltiples veces a la misma IP multicast.
-  + `known_members`: Diccionario anidado que mapea las IPs detectadas y sus hostnames a cada grupo.
-+ *Endpoints:*
+  + `messages`: Lista de diccionarios `{"chat_id": str, "html": str}` que representa el historial.
+  + `joined_groups`: `set` que almacena los grupos multicast actuales.
+  + `known_members`: Diccionario anidado que mapea las IPs detectadas y sus hostnames.
++ *Endpoints de la API Local:*
   + `GET /:` Interfaz principal.
-  + `GET /mensajes:` Renderiza `mensajes.html`.
-  + `GET /estado:` Retorna la topología conocida (grupos y miembros) en formato JSON.
-  + `POST /enviar:` Procesa el envío despachando a la función correspondiente en sockets.
-  + `POST /join_group:` Ejecuta la llamada a sistema a nivel de socket para suscribir la interfaz de red a un grupo Multicast IP.
+  + `GET /mensajes:` Renderiza el fragmento de chat activo.
+  + `GET /estado:` Retorna grupos y miembros en JSON.
+  + `POST /enviar:` Procesa el envío llamando a la función correspondiente en sockets.
+  + `POST /join_group:` Se registra en un grupo a nivel lógico enviando un payload al servidor central.
 
-## 4. Capa de Concurrencia (Gestión de Procesos)
-+ Modelo Multi-hilos (Threading):
-  + **Hilo Principal:** Ejecuta el servidor Flask (Web UI).
-  + **Hilo TCP (Daemon):** Un proceso secundario ejecutando `tcp_listener()` dedicado en exclusiva a recibir conexiones 1-a-1 (Unicast/Anycast).
-  + **Hilo UDP (Daemon):** Un proceso secundario ejecutando `udp_listener()` dedicado a recibir y procesar datagramas de difusión general (Broadcast) o de suscripción (Multicast).
+## 4. Capa de Concurrencia (Gestión de Hilos del Cliente)
++ Modelo Multi-hilos (Threading) en el cliente (`socket_manager.py`):
+  + **Hilo Principal:** Ejecuta el servidor web Flask en `app.py`.
+  + **Hilo TCP (`connect_to_server`):** Mantiene la conexión constante con el servidor central, recibe confirmaciones, mensajes Unicast, Multicast y Anycast vía TCP.
+  + **Hilo UDP (`listen_udp`):** Escucha mensajes que llegan por datagramas UDP (Broadcast y Multicast de alta velocidad).
+  + **Hilo de Descubrimiento (`discovery_broadcaster`):** Envía periódicamente "ping" (heartbeats) al servidor para anunciar que el cliente y sus rutas siguen activos.
 
-## 5. Capa de Comunicación (Redes - Sockets Crudos)
-El backend opera a nivel de transporte y red sin depender de servidores MQTT/WebSockets externos.
-+ **Modos de Direccionamiento Soportados:**
-  + **Unicast & Anycast (TCP):** Se utiliza `socket.SOCK_STREAM`. Garantiza entrega directa P2P para mensajes privados.
-  + **Broadcast (UDP):** Se utiliza `socket.SOCK_DGRAM` con el flag `SO_BROADCAST`. El script calcula matemáticamente la dirección de *Directed Broadcast* leyendo la máscara de subred del SO mediante llamadas a `subprocess` para evitar enviar datagramas nulos `255.255.255.255` que algunos routers modernos bloquean.
-  + **Multicast (UDP):** Se utiliza `socket.SOCK_DGRAM`. Usa IGMP (Internet Group Management Protocol) subyacente del SO. Configura opciones a nivel IP (`socket.IPPROTO_IP`) como `IP_ADD_MEMBERSHIP` para suscribirse, `IP_MULTICAST_TTL` para el alcance, y define explícitamente `IP_MULTICAST_IF` para forzar la salida por la interfaz correcta.
-+ **Formato del Payload:** Para permitir descubrimiento automático de miembros, se abandonó el texto plano en favor de enviar un JSON codificado en UTF-8 conteniendo `{"hostname", "message", "group"}` en cada envío de socket.
+## 5. Capa de Comunicación (Servidor Central - `servidor.py`)
+A diferencia de un modelo P2P puro, este sistema utiliza un servidor central (`servidor.py`) que hace de router o hub para todos los clientes, permitiendo superar restricciones de red (como el bloqueo de multicast/broadcast en algunos routers).
++ **Modos de Enrutamiento Soportados por el Servidor:**
+  + **Unicast (TCP/UDP):** Entrega directa. El servidor busca la IP destino en su diccionario de `clientes_registrados` y reenvía el paquete solo a ese socket.
+  + **Multicast (TCP/UDP):** El servidor mantiene un diccionario `grupos` con las suscripciones. Cuando llega un mensaje a un grupo, el servidor lo duplica y reenvía a todos los miembros de ese grupo.
+  + **Broadcast (TCP/UDP):** El servidor itera sobre todos los clientes registrados y reenvía el mensaje a todos (excepto al remitente original).
+  + **Anycast (TCP/UDP):** El servidor elige aleatoriamente un cliente del pool de conectados y le entrega el mensaje en exclusiva, enviando un "acuse de recibo" (`anycast_receipt`) al remitente para informarle quién lo recibió.
++ **Formato del Payload:** JSON codificado en UTF-8 conteniendo campos como `{"type", "hostname", "message", "group", "mode", "sender_ip"}`.
 
 ---
 # Resumen del Stack Técnico
 + *Lenguaje:* Python 3.8+
 + *Micro-framework:* Flask.
-+ *Networking:* `socket`, `struct`, `ipaddress`.
++ *Networking:* `socket` puro (TCP `SOCK_STREAM` y UDP `SOCK_DGRAM`).
 + *Concurrencia:* `threading`.
 + *Cliente:* Vanilla JS (`fetch` API), CSS3 (Flexbox).
+
+---
+## 6. Documentación de Código (Estudio)
+Los archivos core del proyecto (`app.py`, `servidor.py`, y `socket_manager.py`) han sido comentados línea por línea de manera exhaustiva. El propósito principal de estas anotaciones es servir como material de estudio didáctico para comprender a fondo la implementación técnica, la lógica de red (TCP/UDP), la concurrencia con hilos, y los mecanismos de enrutamiento de mensajes.
