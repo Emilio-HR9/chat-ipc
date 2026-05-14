@@ -1,76 +1,128 @@
-# 💬 Guía de Instalación Rápida del Chat
+# Guía de Usuario: Chat Multi-Modo con Interfaz Web
 
-¡Hola! Esta es una guía paso a paso para instalar y usar esta aplicación de chat en su computadora.
+## 1. Descripción General
 
----
+Esta aplicación es un sistema de chat que permite a los usuarios comunicarse a través de una red local utilizando múltiples esquemas de enrutamiento (Unicast, Broadcast, Multicast y Anycast). Utiliza una arquitectura "Socket-Web Bridge" bajo un modelo Cliente-Servidor:
 
-## 🛠️ Paso 1: Instalar Python
+*   **Servidor Central (`servidor.py`):** Actúa como router central enrutando mensajes por TCP y UDP hacia los clientes destino correspondientes, gestionando las desconexiones y grupos.
+*   **Cliente Web (`app.py`):** Un servidor local escrito en Python con el micro-framework Flask que hace de puente entre los sockets y tu navegador.
+*   **Frontend:** Una interfaz web moderna con soporte para múltiples salas de chat, notificaciones y modo oscuro.
 
-El chat necesita un programa llamado "Python" para poder funcionar. Si ya lo tienes, puedes saltar este paso.
+La principal característica es que abstrae la complejidad de los sockets directos, permitiendo usar protocolos como UDP Multicast y TCP Anycast de forma transparente a través de un nodo central (el servidor).
 
-1. Ve a la página oficial de descargas: [python.org/downloads](https://www.python.org/downloads/)
-2. Haz clic en el botón amarillo que dice **"Download Python"**.
-3. Abre el archivo que se descargó.
-4. **¡MUY IMPORTANTE!** En la primera pantalla de instalación, asegúrate de marcar la casilla en la parte de abajo que dice **"Add python.exe to PATH"** (o "Agregar Python al PATH").
-5. Haz clic en **"Install Now"** y espera a que termine.
+> **Nota de Estudio:** El código fuente principal de este proyecto (`app.py`, `servidor.py`, `socket_manager.py`) está extensamente documentado y comentado línea por línea. Esto fue diseñado específicamente para facilitar el estudio y la comprensión técnica de la arquitectura de sockets y redes.
 
----
+## 2. Requisitos Previos
 
-## 📥 Paso 2: Descargar el Chat
+Antes de comenzar, asegúrate de tener instalado lo siguiente en tu sistema:
 
-1. Ve a la página de este proyecto en GitHub: [https://github.com/Emilio-HR9/chat-ipc](https://github.com/Emilio-HR9/chat-ipc)
-2. Haz clic en el botón verde de la derecha que dice **"<> Code"**.
-3. En el pequeño menú que se abre, selecciona **"Download ZIP"**.
-4. Se descargará un archivo comprimido. Búscalo en tu carpeta de Descargas.
-5. Haz clic derecho sobre el archivo ZIP y selecciona **"Extraer todo..."** (o "Extract All").
-6. Elige una carpeta fácil de encontrar, como tu Escritorio o tus Documentos, y extrae los archivos allí.
+*   **Python:** Versión 3.8 o superior.
+  * https://www.python.org/downloads/
+*   **Pip:** El gestor de paquetes de Python (generalmente viene incluido con Python).
+  * `python -m pip install pip` en terminal.
+* **Flask (opcional):** Un microframework web para Python.
+  * `pip install flask` para Instalar Flask de forma global.
+  * ó en un entorno virtual: (recomendado, esto se hará en la siguiente sección)
 
----
+## 3. Instalación
 
-## ⚙️ Paso 3: Instalar un pequeño requisito
+Sigue estos pasos para configurar el entorno del proyecto:
 
-El chat necesita una pequeña herramienta llamada "Flask" para mostrar la página web. Instalarla es muy fácil:
+1.  **Clona o descarga el proyecto:** Si tienes Git, puedes clonar el repositorio. Si no, simplemente descarga y descomprime los archivos del proyecto en una carpeta.
+    * Clonar el repositorio (recomendado):
+      * `git clone https://github.com/Emilio-HR9/chat-ipc.git`
+    * Descargar el proyecto (ZIP):
+      * Descarga el archivo ZIP.
+        * `https://github.com/Emilio-HR9/chat-ipc/archive/refs/heads/main.zip`
+        * o directamente desde la página del repositorio con el botón "Code" verde en la parte superior.
+      * Extrae el archivo ZIP en una carpeta de tu elección.
+    
+2.  **Navega a la carpeta del proyecto:**
+    Abre una terminal o línea de comandos y muévete al directorio donde se encuentran los archivos del proyecto.
+    ```bash
+    cd ruta/a/tu/proyecto
+    ```
 
-1. Abre la carpeta donde extrajiste los archivos del chat (deberías ver archivos adentro como `app.py`, `servidor.py`, etc.).
-2. Haz clic en la **barra de direcciones** de la carpeta (en la parte superior de la ventana, donde dice la ruta de la carpeta).
-3. Borra todo lo que dice ahí, escribe la palabra `cmd` y presiona **Enter**.
-4. Se abrirá una ventana negra. Escribe exactamente lo siguiente y presiona **Enter**:
-   ```
-   pip install Flask
-   ```
-5. Verás que se descargan algunas cosas. Cuando termine y vuelva a aparecer texto normal para escribir, puedes cerrar esa ventana negra.
+3.  **Crea un entorno virtual (Recomendado):**
+    Es una buena práctica aislar las dependencias del proyecto.
+    ```bash
+    python -m venv venv
+    ```
+    Y actívalo:
+    *   En Windows:
+        ```bash
+        .\venv\Scripts\activate
+        ```
+    *   En macOS y Linux:
+        ```bash
+        source venv/bin/activate
+        ```
 
----
+4.  **Instala las dependencias:**
+    La única dependencia externa es Flask. Instálala usando pip:
+    ```bash
+    pip install Flask
+    ```
 
-## 🚀 Paso 4: ¡Iniciar el Chat!
+## 4. Configuración de Red
 
-Para que el chat funcione, necesitamos abrir dos cosas: el "Servidor Central" (que conecta los mensajes) y tu "Ventana de Chat".
+Por defecto, la aplicación está configurada para probarse en la misma máquina (`127.0.0.1`). 
+Si deseas usarla entre varias computadoras de una red local:
 
-**1. Encender el Servidor Central:**
-1. Haz clic en la **barra de direcciones** de la carpeta del chat.
-2. Borra todo, escribe `cmd` y presiona **Enter**.
-3. En la ventana negra que aparece, escribe `python servidor.py` y presiona **Enter**.
-4. Verás un mensaje que dice "Servidor IPC iniciado...". **No cierres esta ventana**, déjala abierta en el fondo.
+1. Averigua la dirección IP local de la computadora que hará de Servidor.
+2. Abre el archivo `socket_manager.py`.
+3. Modifica la variable `SERVER_IP` (actualmente configurada como `"192.168.43.140"` por defecto) reemplazándola con la IP actual de la computadora servidor.
+4. Asegúrate de abrir el puerto `65432` en el Firewall de Windows usando los scripts incluidos en la carpeta `scripts_red`.
 
-**2. Abrir tu Ventana de Chat:**
-1. Vuelve a la carpeta del chat y abre *otra* ventana negra (repite los pasos 1 y 2 de arriba: escribe `cmd` en la barra de direcciones y da Enter).
-2. En esta nueva ventana negra, escribe `python app.py` y presiona **Enter**. **Tampoco la cierres**.
-3. Verás que aparecen varios textos. Busca donde diga "Running on...". Verás dos enlaces (links).
-4. Abre tu navegador de internet (Chrome, Edge, Firefox, etc.).
-5. Copia el **segundo enlace** que aparece en la ventana negra (normalmente se ve algo como `http://192.168...:5000`) y escríbelo en la barra de direcciones de tu navegador, luego presiona Enter.
-6. ¡Listo! Deberías estar viendo la pantalla del chat.
+## 5. Cómo Ejecutar la Aplicación
 
-*(Si quieres probar el chat abriendo la cuenta de otra persona simulada en tu misma computadora, vuelve a abrir otra ventana de `cmd`, escribe `python app.py` y usa el enlace que te dé esa nueva ventana).*
+Para que el sistema funcione, necesitas iniciar tanto el servidor central como al menos un cliente.
 
----
+**Paso 1: Iniciar el Servidor Central**
+Abre una terminal y ejecuta:
+```bash
+python servidor.py
+```
+Verás un mensaje indicando que el servidor ha iniciado en el puerto 65432. Déjalo corriendo.
 
-## 🌐 Paso Extra: Chatear con otras computadoras en tu casa
+**Paso 2: Iniciar el Cliente Web**
+Abre *otra* terminal (o abre terminales en otras computadoras si configuraste la IP de red) y ejecuta:
+```bash
+python app.py
+```
 
-Si quieres que alguien más en tu casa (conectado a tu mismo WiFi) se conecte a tu chat:
+Verás una salida similar a esta:
+```
+[*] Iniciando servidor web Flask en puerto 5000...
+[*] Accede a http://localhost:5000 desde el navegador.
+```
 
-1. Elige una computadora para que sea el **Servidor Central**. En esa computadora, abre el menú inicio, busca "cmd" y ábrelo. Escribe `ipconfig` y presiona Enter. Busca donde dice **"Dirección IPv4"** (ejemplo: `192.168.1.15`) y anota ese número.
-2. En los archivos del chat que descargaste, abre el archivo `socket_manager.py` (puedes usar el Bloc de Notas para abrirlo).
-3. Busca la línea que dice `SERVER_IP = "..."` (está casi al principio del archivo) y cambia el número que está entre las comillas por el número que anotaste en el paso 1. Guarda el archivo.
-4. Sigue el **Paso 4** normal en esa computadora principal (abrir `servidor.py` y luego `app.py`).
-5. En las otras computadoras de tu casa, repite los pasos 1, 2 y 3 de esta guía (descargar Python, descargar el chat, instalar Flask y cambiar la IP en `socket_manager.py`).
-6. En esas computadoras adicionales, **solo abre `app.py`** (recuerda usar el método de escribir `cmd` y luego `python app.py`). Y luego entra al segundo enlace (`http://192.168...:5000`) que te aparezca en esa computadora en su propio navegador.
+## 6. Cómo Usar el Chat
+
+Para probar el chat, asegúrate de que `servidor.py` esté corriendo y luego inicia tantas instancias de `app.py` como desees (si las inicias en la misma máquina, cada `app.py` tomará un puerto web diferente automáticamente, ej. 5000, 5001, 5002...).
+
+1.  **Abre un navegador web** y accede al puerto que te indicó la consola, por ejemplo:
+    ```
+    http://localhost:5000
+    ```
+
+### La Interfaz
+
+*   **Panel Central (Mensajes):** Muestra los mensajes de la conversación que tienes seleccionada actualmente.
+*   **Panel Derecho (Chats):** Muestra todos los chats disponibles:
+    *   **Broadcast (🌍):** Un canal general donde todos los clientes conectados pueden leer y escribir.
+    *   **Grupos Multicast (👥):** Canales específicos a los que puedes unirte para hablar con un subgrupo de usuarios.
+    *   **Usuarios (👤):** Conversaciones directas (Unicast/Anycast) con usuarios específicos.
+*   **Panel Inferior (Envío):**
+    *   **Modo:** Selecciona cómo quieres enviar tu mensaje (Unicast, Broadcast, Multicast, Anycast).
+    *   **Protocolo:** Permite forzar el envío usando TCP (seguro) o UDP (rápido).
+    *   **IP Destino:** La IP del usuario (Unicast) o del grupo (Multicast).
+    *   **Mensaje:** Tu texto a enviar.
+
+### Funciones Principales
+
+*   **Chat General (Broadcast):** Selecciona "Broadcast" en el panel derecho. El servidor retransmitirá el mensaje a todos los clientes.
+*   **Unirse a un Grupo (Multicast):** En la parte inferior del panel derecho, ingresa un nombre o IP Multicast (ej. `224.1.1.2`) y haz clic en "Unirse". Se creará un canal privado manejado por el servidor.
+*   **Mensajes Privados (Unicast):** Escribe un mensaje indicando la IP destino en el panel inferior, selecciona "Unicast" y envíalo.
+*   **Mensaje Aleatorio (Anycast):** Selecciona "Anycast", y el servidor le entregará el mensaje a un solo usuario al azar de la red.
+*   **Notificaciones:** Cuando recibas un mensaje en un chat que no estás viendo, aparecerá una burbuja roja en el panel derecho.
